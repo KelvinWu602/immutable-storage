@@ -35,12 +35,17 @@ func (ipfs IPFS) Store(key blueprint.Key, message []byte) error {
 
 func (ipfs IPFS) Read(key blueprint.Key) ([]byte, error) {
 	//TODO
-	return nil, nil
+	return []byte{}, nil
 }
 
 func (ipfs IPFS) AvailableKeys() []blueprint.Key {
 	//TODO
-	return nil
+	return []blueprint.Key{}
+}
+
+func (ipfs IPFS) IsDiscovered(key blueprint.Key) bool {
+	//TODO
+	return true
 }
 
 func (ipfs IPFS) propageWrite(updatedIndexIPNS string) error {
