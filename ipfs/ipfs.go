@@ -44,8 +44,8 @@ func (ipfs IPFS) AvailableKeys() []blueprint.Key {
 }
 
 func (ipfs IPFS) IsDiscovered(key blueprint.Key) bool {
-	//TODO
-	return true
+	_, discovered := ipfs.keyToCid[key]
+	return discovered
 }
 
 func (ipfs IPFS) propageWrite(updatedIndexIPNS string) error {
