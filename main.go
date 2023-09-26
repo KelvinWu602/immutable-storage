@@ -15,7 +15,7 @@ func main() {
 
 	var key blueprint.Key
 	rand.Read(key[:])
-	client.GetDAGLinks("QmXjgEFmRVbikc12kwmehZn3f5w92y8qqVLQjrtx7N9AEq")
+	client.GetDAGLinks("QmaNN41g4oM6MDzZynrzpCwngBSe39poVE1Ket2rWznKZm")
 }
 
 type Provider int

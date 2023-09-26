@@ -3,7 +3,6 @@ package ipfs
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -118,41 +117,38 @@ func (req *IPFSRequest) ReadFileWithCID(cid string) (io.ReadCloser, error) {
 	return content, err
 }
 
+type SlashData struct {
+	Slash Data `json:"/"`
+}
+
+type SlashHash struct {
+	Slash string `json:"/"`
+}
+
+type Data struct {
+	Bytes string `json:"bytes"`
+}
+
+type Hash struct {
+	Hash  SlashHash `json:"Hash"`
+	Name  string    `json:"Name"`
+	Tsize int       `json:"Tsize"`
+}
+
+type DagGetJson struct {
+	Data  SlashData `json:"Data"`
+	Links []Hash    `json:"Links"`
+}
+
 func (req *IPFSRequest) GetDAGLinks(cid string) (map[string]string, error) {
-	//TODO : This does not work, Response only return 1 byte in body, need to investigate why
-	// Since go-ipfs-api still have not completed this function, we use low level HTTP request
-	log.Println(
-		fmt.Sprintf("http://127.0.0.1:5001/api/v0/dag/get?arg=%s&output-codec=dag-json", cid),
-	)
-	r, err := http.NewRequest(
-		"POST",
-		fmt.Sprintf("http://127.0.0.1:5001/api/v0/dag/get?arg=%s&output-codec=dag-json", cid),
-		nil,
-	)
+	var resJson DagGetJson
+	err := req.sh.DagGet(cid, &resJson)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
-	log.Println(r.UserAgent())
-	r.Header.Add("Accept", "*/*")
-	r.Header.Add("User-Agent", "curl/8.1.1")
-
-	res, err := req.cli.Do(r)
-	if err != nil {
-		log.Println(err)
-		return nil, err
+	output := make(map[string]string)
+	for _, v := range resJson.Links {
+		output[v.Name] = v.Hash.Slash
 	}
-	defer res.Body.Close()
-
-	log.Println(res.Status, res.ContentLength)
-
-	var body [512]byte
-	n, err := res.Body.Read(body[:])
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-	log.Println(n)
-	log.Println(body[:n])
-	return nil, nil
+	return output, nil
 }
