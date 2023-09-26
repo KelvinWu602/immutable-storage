@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
+	"fmt"
 	"time"
 
 	"github.com/KelvinWu602/immutable-storage/blueprint"
@@ -11,11 +11,14 @@ import (
 func main() {
 	// TODO
 	// experimental
-	client := ipfs.NewIPFSClient(5 * time.Second)
+	client := ipfs.NewIPFSClient(10 * time.Second)
 
-	var key blueprint.Key
-	rand.Read(key[:])
-	client.GetDAGLinks("QmaNN41g4oM6MDzZynrzpCwngBSe39poVE1Ket2rWznKZm")
+	res, err := client.CreateIPNSPointer("QmaNN41g4oM6MDzZynrzpCwngBSe39poVE1Ket2rWznKZm", "self")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(res)
 }
 
 type Provider int

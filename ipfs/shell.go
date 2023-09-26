@@ -155,3 +155,43 @@ func (req *IPFSRequest) GetDAGLinks(cid string) (map[string]string, error) {
 	}
 	return links, nil
 }
+
+func (req *IPFSRequest) PublishIPNSPointer(cid string, key string) (string, error) {
+	//TODO research on the effect of lifetime, see if any further actions are required to keep IPNS record alive
+	res, err := req.sh.PublishWithDetails(cid, key, 100*365*24*time.Hour, 5*time.Minute, true)
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	return res.Name, nil
+}
+
+func (req *IPFSRequest) ResolveIPNSPointer(ipns string) (string, error) {
+	res, err := req.sh.Resolve(ipns)
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	return res, nil
+}
+
+func (req *IPFSRequest) GenerateKey(name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
+	defer cancel()
+	_, err := req.sh.KeyGen(ctx, name, func(rb *shell.RequestBuilder) error { return nil })
+	return err
+}
+
+func (req *IPFSRequest) ListKeys() ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
+	defer cancel()
+	res, err := req.sh.KeyList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keynames := make([]string, len(res))
+	for i, key := range res {
+		keynames[i] = key.Name
+	}
+	return keynames, nil
+}
