@@ -18,8 +18,8 @@ type ipfsRequest struct {
 	timeout time.Duration
 }
 
-func newIPFSClient(timeout time.Duration) *ipfsRequest {
-	return &ipfsRequest{shell.NewShell("localhost:5001"), &http.Client{}, timeout}
+func newIPFSClient(host string, timeout time.Duration) *ipfsRequest {
+	return &ipfsRequest{shell.NewShell(host), &http.Client{}, timeout}
 }
 
 func (req *ipfsRequest) createDirectory(path string) error {

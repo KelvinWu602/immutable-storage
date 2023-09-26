@@ -1,6 +1,15 @@
 package ipfs
 
 import (
+	"bufio"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/go-yaml/yaml"
+
 	"github.com/KelvinWu602/immutable-storage/blueprint"
 )
 
@@ -17,14 +26,61 @@ type discoverProgressProfile struct {
 }
 
 type IPFS struct {
+	daemon           *ipfsRequest
 	keyToCid         map[blueprint.Key]cidProfile
 	indexDirectory   string
 	indexPage        string
 	discoverProgress map[string]discoverProgressProfile
 }
 
+type config struct {
+	host    string `yaml:host`
+	timeout int    `yaml:timeout`
+}
+
 func (ipfs IPFS) New(configFile string) error {
 	// TODO
+	/**
+	  check connection to IPFS daemon
+	  set up keys
+	  load configFile
+	  initialize directorys and files
+	  start workers
+	*/
+	//error
+	e := errors.New("Failed to create immutable-storage")
+
+	//read configFile
+	file, err := os.Open(configFile)
+	if err != nil {
+		log.Println(err)
+		return e
+	}
+	buf := make([]byte, 1024)
+	r := bufio.NewReader(file)
+	n, err := r.Read(buf)
+	if err != nil {
+		log.Println(err)
+		return e
+	}
+
+	//unmarshal configFile
+	var config config
+	yaml.Unmarshal(buf[:n], &config)
+
+	//send HEAD request to <host>/api/v0/id
+	cli := &http.Client{}
+	res, err := cli.Head(config.host + "/api/v0/id")
+	if err != nil {
+		log.Println(err)
+		return e
+	}
+	if res.StatusCode != 405 {
+		log.Println("Abnormal response from host!")
+		return e
+	}
+	ipfs.daemon = newIPFSClient(config.host, time.Duration(config.timeout))
+
 	return nil
 }
 
