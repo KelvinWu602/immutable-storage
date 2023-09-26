@@ -12,17 +12,17 @@ import (
 	shell "github.com/ipfs/go-ipfs-api"
 )
 
-type IPFSRequest struct {
+type ipfsRequest struct {
 	sh      *shell.Shell
 	cli     *http.Client
 	timeout time.Duration
 }
 
-func NewIPFSClient(timeout time.Duration) *IPFSRequest {
-	return &IPFSRequest{shell.NewShell("localhost:5001"), &http.Client{}, timeout}
+func newIPFSClient(timeout time.Duration) *ipfsRequest {
+	return &ipfsRequest{shell.NewShell("localhost:5001"), &http.Client{}, timeout}
 }
 
-func (req *IPFSRequest) CreateDirectory(path string) error {
+func (req *ipfsRequest) createDirectory(path string) error {
 	// create timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
@@ -35,7 +35,7 @@ func (req *IPFSRequest) CreateDirectory(path string) error {
 	return err
 }
 
-func (req *IPFSRequest) GetDirectoryCID(path string) (string, error) {
+func (req *ipfsRequest) getDirectoryCID(path string) (string, error) {
 	// create timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
@@ -49,7 +49,7 @@ func (req *IPFSRequest) GetDirectoryCID(path string) (string, error) {
 	return res.Hash, nil
 }
 
-func (req *IPFSRequest) GetDirectorySize(path string) (uint64, error) {
+func (req *ipfsRequest) getDirectorySize(path string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 
@@ -61,13 +61,13 @@ func (req *IPFSRequest) GetDirectorySize(path string) (uint64, error) {
 	return res.Size, nil
 }
 
-func (req *IPFSRequest) AppendStringToFile(
+func (req *ipfsRequest) appendStringToFile(
 	path string,
 	content string,
 	fileSizeLimit uint64,
 ) error {
 	// obtain offset by getting the file size in byte
-	offset, _ := req.GetDirectorySize(path)
+	offset, _ := req.getDirectorySize(path)
 	if offset+uint64(len(content)) > fileSizeLimit {
 		return errors.New("exceed file size limit")
 	}
@@ -89,7 +89,7 @@ func (req *IPFSRequest) AppendStringToFile(
 	return err
 }
 
-func (req *IPFSRequest) ReadFileWithPath(path string, offset uint64) (io.ReadCloser, error) {
+func (req *ipfsRequest) readFileWithPath(path string, offset uint64) (io.ReadCloser, error) {
 	options := func(rb *shell.RequestBuilder) error {
 		rb.Option("offset", offset)
 		return nil
@@ -107,7 +107,7 @@ func (req *IPFSRequest) ReadFileWithPath(path string, offset uint64) (io.ReadClo
 	return content, err
 }
 
-func (req *IPFSRequest) ReadFileWithCID(cid string) (io.ReadCloser, error) {
+func (req *ipfsRequest) readFileWithCID(cid string) (io.ReadCloser, error) {
 	//TODO
 	content, err := req.sh.Cat(cid)
 	if err != nil {
@@ -140,7 +140,7 @@ type DagGetJson struct {
 	Links []Hash    `json:"Links"`
 }
 
-func (req *IPFSRequest) GetDAGLinks(cid string) (map[string]string, error) {
+func (req *ipfsRequest) getDAGLinks(cid string) (map[string]string, error) {
 	var resJson DagGetJson
 	err := req.sh.DagGet(cid, &resJson)
 	if err != nil {
@@ -156,7 +156,7 @@ func (req *IPFSRequest) GetDAGLinks(cid string) (map[string]string, error) {
 	return links, nil
 }
 
-func (req *IPFSRequest) PublishIPNSPointer(cid string, key string) (string, error) {
+func (req *ipfsRequest) publishIPNSPointer(cid string, key string) (string, error) {
 	//TODO research on the effect of lifetime, see if any further actions are required to keep IPNS record alive
 	res, err := req.sh.PublishWithDetails(cid, key, 100*365*24*time.Hour, 5*time.Minute, true)
 	if err != nil {
@@ -166,7 +166,7 @@ func (req *IPFSRequest) PublishIPNSPointer(cid string, key string) (string, erro
 	return res.Name, nil
 }
 
-func (req *IPFSRequest) ResolveIPNSPointer(ipns string) (string, error) {
+func (req *ipfsRequest) resolveIPNSPointer(ipns string) (string, error) {
 	res, err := req.sh.Resolve(ipns)
 	if err != nil {
 		log.Println(err)
@@ -175,14 +175,14 @@ func (req *IPFSRequest) ResolveIPNSPointer(ipns string) (string, error) {
 	return res, nil
 }
 
-func (req *IPFSRequest) GenerateKey(name string) error {
+func (req *ipfsRequest) generateKey(name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 	_, err := req.sh.KeyGen(ctx, name, func(rb *shell.RequestBuilder) error { return nil })
 	return err
 }
 
-func (req *IPFSRequest) ListKeys() ([]string, error) {
+func (req *ipfsRequest) listKeys() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 	res, err := req.sh.KeyList(ctx)
