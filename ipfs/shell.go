@@ -146,9 +146,12 @@ func (req *IPFSRequest) GetDAGLinks(cid string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	output := make(map[string]string)
+	links := make(map[string]string)
 	for _, v := range resJson.Links {
-		output[v.Name] = v.Hash.Slash
+		if len(v.Name) > 0 {
+			// files also contains links, but those links are nameless
+			links[v.Name] = v.Hash.Slash
+		}
 	}
-	return output, nil
+	return links, nil
 }
