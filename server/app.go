@@ -17,7 +17,10 @@ func NewApplicationServer(is blueprint.ImmutableStorage) ApplicationServer {
 	return ApplicationServer{storage: is}
 }
 
-func (s ApplicationServer) Store(ctx context.Context, req *protos.StoreRequest) (*protos.StoreResponse, error) {
+func (s ApplicationServer) Store(
+	ctx context.Context,
+	req *protos.StoreRequest,
+) (*protos.StoreResponse, error) {
 	if len(req.Key) != 48 {
 		return &protos.StoreResponse{Success: false}, errors.New("Invalid Key")
 	}
@@ -31,7 +34,10 @@ func (s ApplicationServer) Store(ctx context.Context, req *protos.StoreRequest) 
 	}
 }
 
-func (s ApplicationServer) Read(ctx context.Context, req *protos.ReadRequest) (*protos.ReadResponse, error) {
+func (s ApplicationServer) Read(
+	ctx context.Context,
+	req *protos.ReadRequest,
+) (*protos.ReadResponse, error) {
 	if len(req.Key) != 48 {
 		return &protos.ReadResponse{Content: nil}, errors.New("Invalid Key")
 	}
@@ -45,7 +51,10 @@ func (s ApplicationServer) Read(ctx context.Context, req *protos.ReadRequest) (*
 	}
 }
 
-func (s ApplicationServer) AvailableKeys(ctx context.Context, req *protos.AvailableKeysRequest) (*protos.AvailableKeysResponse, error) {
+func (s ApplicationServer) AvailableKeys(
+	ctx context.Context,
+	req *protos.AvailableKeysRequest,
+) (*protos.AvailableKeysResponse, error) {
 	return &protos.AvailableKeysResponse{Keys: nil}, nil
 }
 

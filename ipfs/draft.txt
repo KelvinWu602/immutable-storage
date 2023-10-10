@@ -1,0 +1,30 @@
+New():
+  load config file .yml
+    syntax of config file .yml
+    ===
+    host: <ipv4 address>
+    timeout: <int in ms>
+    ===
+  
+  test connection to the ipfs daemon
+    HTTP HEAD to <host>/api/v0/id
+    returned status code == 405
+
+  initialize node state:
+    1st stage: lonely initialization
+      0. create 2 public keys for each IPNS name
+        nodestxt ==> nodes.txt
+        mappings ==> mappings/
+      1. create empty directory mappings/
+      2. publish IPNS name for mappings/
+      3. create nodes.txt with IPNS of mappings/ written
+      4. create IPNS name for nodes.txt
+
+    2nd stage: group initialization
+      1. gossip broadcast your own IPNS of mappings/
+      2. query 3 other nodes for their nodes.txt's IPNS
+      3. for each unseen mappingIPNS, validate a random entry in it
+      4. create a union of 3 validated results, use it as your own nodes.txt
+      5. update your IPNS of nodes.txt
+      6. start the round-robin update worker goroutine
+
