@@ -49,12 +49,14 @@ func New(configFile string) (*IPFS, error) {
 
 	config, err := parseConfigFile(configFile)
 	if err != nil {
+		log.Println("Error during parseConfigFile...")
 		log.Println(err)
 		return nil, e
 	}
 	//send HEAD request to <host>/api/v0/id
 	err = checkDaemonAlive(config.host)
 	if err != nil {
+		log.Println("Error during checkDaemonAlive...")
 		log.Println(err)
 		return nil, e
 	}
@@ -66,6 +68,7 @@ func New(configFile string) (*IPFS, error) {
 	//lonely init
 	mappingsIPNS, oldNodesIPNS, err := lonelyInitialization(ipfs.daemon)
 	if err != nil {
+		log.Println("Error during lonelyInitialization...")
 		log.Println(err)
 		return nil, e
 	}
@@ -74,16 +77,17 @@ func New(configFile string) (*IPFS, error) {
 	//group init
 	newNodesIPNS, err = groupInitialization(daemon,oldNodesIPNS)
 	if err!=nil {
+		log.Println("Error during groupInitialization...")
 		log.Println(err)
 		return nil,e 
 	}
 	ipfs.nodesIPNS = newNodesIPNS
 
 	// start grpc server
-	
+	// TODO: create inter-node grpc server
 
 	// start worker processes
-
+	// TODO: create worker functions
 
 	return &ipfs, nil
 }
