@@ -89,6 +89,18 @@ func (req *ipfsRequest) appendStringToFile(
 	return err
 }
 
+func (req *ipfsRequest) removeFile(path string, recursive bool) error {
+	// create timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
+	defer cancel()
+
+	err := req.sh.FilesRm(ctx, path, recursive)
+	if err != nil {
+		log.Println(err)
+	}
+	return err
+}
+
 func (req *ipfsRequest) readFileWithPath(path string, offset uint64) (io.ReadCloser, error) {
 	options := func(rb *shell.RequestBuilder) error {
 		rb.Option("offset", offset)

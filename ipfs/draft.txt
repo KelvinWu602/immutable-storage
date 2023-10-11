@@ -16,7 +16,12 @@ New():
         nodestxt ==> nodes.txt
         mappings ==> mappings/
       1. create empty directory mappings/ 
-        check if it already existed using getDirectoryCID
+        check if it already existed using createDirectory
+        =====
+        test error of 
+          createDirectory (if directory existed: err.Error() == "files/mkdir: file already exists") 
+          getDirectoryCID (if directory not existed: files/stat: file does not exist)
+        =====
           if existed:
             skip
           if not existed:

@@ -7,14 +7,17 @@ import (
 func main() {
 	// TODO
 	// experimental
-	// client := ipfs.NewIPFSClient(10 * time.Second)
+	// client := ipfs.NewIPFSClient("127.0.0.1:5001", 10*time.Second)
 
-	// res, err := client.CreateIPNSPointer("QmaNN41g4oM6MDzZynrzpCwngBSe39poVE1Ket2rWznKZm", "self")
+	// err := client.CreateDirectory("/kelvin")
 	// if err != nil {
 	// 	fmt.Println(err)
+	// 	if err.Error() == "files/mkdir: file already exists" {
+	// 		fmt.Println("ok")
+	// 	}
 	// 	return
 	// }
-	// fmt.Println(res)
+	//fmt.Println(res)
 }
 
 type Provider int

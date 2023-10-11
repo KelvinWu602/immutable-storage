@@ -8,3 +8,5 @@ type ImmutableStorage interface {
 }
 
 type Key [48]byte
+
+const KeySize int = 48

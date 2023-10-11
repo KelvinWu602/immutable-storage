@@ -4,12 +4,17 @@ import (
 	"bufio"
 	"errors"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
+	"sync"
 	"time"
-	"github.com/go-yaml/yaml"
+
 	"github.com/KelvinWu602/immutable-storage/blueprint"
+	"github.com/KelvinWu602/immutable-storage/ipfs/protos"
+	"github.com/go-yaml/yaml"
+	"google.golang.org/grpc"
 )
 
 // A mapping page is a file under the /mappings MFS directory named with "<page_number>.txt". Each mapping page contains 512 entries at maximum.
@@ -72,7 +77,7 @@ func New(configFile string) (*IPFS, error) {
 	ipfs.mappingsIPNS = mappingsIPNS
 
 	//group init
-	newNodesIPNS, err = groupInitialization(daemon,oldNodesIPNS)
+	newNodesIPNS, err = groupInitialization(daemon,oldNodesIPNS,time.Duration(config.timeout))
 	if err!=nil {
 		log.Println("Error during groupInitialization...")
 		log.Println(err)
@@ -131,7 +136,7 @@ func checkDaemonAlive(host string) error {
 func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	// TODO: also consider the case when existing IPNS are provided for mapping IPNS and nodesIPNS
 	// initialize public keys: nodes, mappings
-	log.Println("Started lonely initialization")
+	log.Println("Started lonely initialization...")
 	keyNames, err := daemon.listKeys()
 	if err != nil {
 		return "", "", err
@@ -157,63 +162,82 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 		}
 	}
 	log.Println("Successfully created keys")
-	// create MFS directory /mappings
-	if err = daemon.createDirectory("/mappings"); err != nil {
+	// create MFS directory /mappings, ignore error for file already exists
+	if err = daemon.createDirectory("/mappings"); err != nil && err.Error() != "files/mkdir: file already exists" {
 		return "", "", err
 	}
 	// publish IPNS name for directory /mappings
 	mappingsCID, err := daemon.getDirectoryCID("/mappings")
 	if err != nil {
-		return
+		return "", "", err
 	}
 	mappingsIPNS, err = daemon.publishIPNSPointer(mappingsCID, "mappings")
 	if err != nil {
-		return
+		return "", "", err
 	}
-	// create and append mappingIPNS in file /nodes.txt
-	// assumed each IPNS name has equal fixed length
-	if err = daemon.appendStringToFile("/nodes.txt", mappingsIPNS, nodestxtMaxSize); err != nil {
-		return
+	log.Println("Successfully published mappingsIPNS:", mappingsIPNS)
+	// create and append mappingIPNS in file /nodes.txt with comma delimiter
+	_ , err:= daemon.getDirectoryCID("/nodes.txt")
+	if err == nil {
+		// if file exists, remove it
+		if err2 := daemon.removeFile("/nodes.txt",false); err2 != nil {
+			return "", "", err2
+		}
+	}else if err.Error()!= "files/stat: file does not exist"{
+		// if any error except file does not exist, return it
+		return "", "", err
+	}
+	log.Println("Successfully cleaned old /nodes.txt")
+
+	if err = daemon.appendStringToFile("/nodes.txt", mappingsIPNS+",", nodestxtMaxSize); err != nil {
+		return "", "", err
 	}
 	// publish IPNS name for file /nodes.txt
 	nodesCID, err := daemon.getDirectoryCID("/nodes.txt")
 	if err != nil {
-		return
+		return "", "", err
 	}
 	nodesIPNS, err = daemon.publishIPNSPointer(nodesCID, "nodes")
 	if err != nil {
-		return
+		return "", "", err
 	}
-	return
+	log.Println("Successfully published nodesIPNS:", nodesIPNS)
+	return nodesIPNS, mappingsIPNS, nil
 }
 
-func groupInitialization(daemon *ipfsRequest, myNodesIPNS string) (string, error) {
-	// gossip broadcast mappingsIPNS to 3 random peers
-	var peers [3]string
-	// make a grpc call to node-discovery module for the get_member endpoint
-
-	for _, peer := range peers {
-		//	make a grpc call to peer for the propagate_write grpc endpoint
+//groupInitialization returns nodesIPNS, err
+func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, timeout time.Duration) (string, error) {
+	log.Println("Start group initialization...")
+	if err := ipfs.propagateWrite(myMappingsIPNS); err != nil {
+		return myNodesIPNS, err
 	}
+	log.Println("Successfully propagated write")
 
-	var externalNodesIPNS [3]string
-	for _, peer := range peers {
-		// make a grpc call to peer to request for its nodes.txt IPNS name
+	externalNodesIPNS, err := ipfs.initNodestxt()
+	if err != nil {
+		return myNodesIPNS, err
 	}
+	log.Println("Successfully requested for nodesIPNS:", externalNodesIPNS)
 
 	// get the content for each nodes.txt
 	union := make(map[string]bool)
-	seenRecords , err := parseNodesIPNS(daemon, myNodesIPNS)
+	seenRecords , err := parseNodesIPNS(ipfs.daemon, myNodesIPNS)
+	if err != nil {
+		return myNodesIPNS, err
+	}	
 	for _, record := range seenRecords {
 		union[record] = true
 	}
 
-	for i, nodesIPNS := range externalNodesIPNS {
-		content, err := parseNodesIPNS(daemon, nodesIPNS)
-		if err != nil {
-			return "",err
+	for _, nodesIPNS := range externalNodesIPNS {
+		if len(nodesIPNS) == 0 {
+			continue
 		}
-		// for each unseen record, add seen with bool = false
+		content, err := parseNodesIPNS(ipfs.daemon, nodesIPNS)
+		if err != nil {
+			return myNodesIPNS,err
+		}
+		// for each unseen record, union[record] = false
 		for _, record := range content {
 			if _, ok := union[record]; !ok {
 				union[record] = false
@@ -222,19 +246,27 @@ func groupInitialization(daemon *ipfsRequest, myNodesIPNS string) (string, error
 	}
 	
 	// for each unseen record, validate, append to your own nodes.txt file if validated, discard if not
+	var wg sync.WaitGroup
 	for record, seen := range union {
 		if !seen {
-			// check any random 1 record in the mappings
-			ok, err:= validateMappingsIPNS(daemon,record,1)
-			if err != nil{
-				return "",err
-			}
-			//append the record to my own nodes.txt
-			if err:= daemon.appendStringToFile("/nodes.txt",record,nodestxtMaxSize); err != nil{
-				return "",err
-			}
+			wg.Add(1)
+			go func(){
+				// check any random 1 record in the mappings
+				ok, err:= validateMappingsIPNS(daemon,record,1)
+				if err != nil{
+					wg.Done()
+					return
+				}
+				//append the record to my own nodes.txt
+				if err:= daemon.appendStringToFile("/nodes.txt",record,nodestxtMaxSize); err != nil{
+					wg.Done()
+					return
+				}
+				wg.Done()
+			}()
 		}
 	}
+	wg.Wait()
 
 	// update the IPNS name for your nodes.txt
 	nodesCID, err := daemon.getDirectoryCID("/nodes.txt")
@@ -255,23 +287,41 @@ func parseNodesIPNS(daemon *ipfsRequest, nodesIPNS string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: change to more memory safe approach
-	buf := make([]byte, nodestxtMaxSize)
+	
 	r := bufio.NewReader(file)
-	n, err := r.Read(buf)
-	if err != nil {
-		return nil, err
+	entry, err := r.ReadSlice(';')
+	mappingsIPNSs := make([]string,1)
+	for err == nil {
+		mappingIPNS := string(entry[:len(entry)-1])
+		mappingsIPNSs = append(mappingsIPNSs, mappingIPNS)
+		entry, err = r.ReadSlice(';')
 	}
 	if err = file.Close(); err != nil {
 		return nil, err
 	}
-	mappingsIPNSs := make([]string, n/len(nodesIPNS))
-	for i := 0; i < n/len(nodesIPNS); i++ {
-		mappingsIPNS := string(buf[i*len(nodesIPNS) : (i+1)*len(nodesIPNS)])
-		// validate the mappingsIPNS
-		mappingsIPNSs[i] = mappingsIPNS
-	}
 	return mappingsIPNSs, nil
+}
+
+// parseMappingsIPNS takes the CID of a mapping page with at most 512 <key>,<cid>; records and convert it into a map[Key]Cid
+func parseMappingsIPNS(daemon *ipfsRequest, mappingCID string) (map[blueprint.Key]string, error) {
+	file, err := daemon.readFileWithCID(mappingCID)
+	if err != nil {
+		return nil, err
+	}
+	
+	r := bufio.NewReader(file)
+	entry, err := r.ReadSlice(';')
+	result := make(map[blueprint.Key]string)
+	for err == nil {
+		key := blueprint.Key(entry[:blueprint.KeySize])
+		cid := entry[blueprint.KeySize+1:]
+		result[key] = cid
+		entry, err = r.ReadSlice(';')
+	}
+	if err = file.Close(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func validateMappingsIPNS(daemon *ipfsRequest, mappingsIPNS string, n int) (bool, error) {
@@ -290,28 +340,36 @@ func validateMappingsIPNS(daemon *ipfsRequest, mappingsIPNS string, n int) (bool
 		pageNumber := rand.Intn(len(filesNameToCid))
 
 		fileName := string(pageNumber) + ".txt"
-		fileSizeInByte, err := daemon.getDirectorySize("/mappings/" + fileName)
-		if err != nil {
+
+		entries, err := parseMappingsIPNS(daemon,filesNameToCid[fileName])
+		if err !=nil {
 			return false, err
 		}
 
-		entryNumber := rand.Intn(int(fileSizeInByte) / entrySizeInByte)
-		// TODO: change to use the read with byte offset, limit instead
-		file, err := daemon.readFileWithCID(filesNameToCid[fileName])
-		if err != nil {
-			return false, err
-		}
-		key, cid := //somehow read the entryNumber th entry
+		
+		// it doesnt work when mappingsIPNS is external
 
-		ok, err := validateMapping(daemon, key, cid)
-		if err!=nil {
-			return false, err
-		}
-		if !ok {
-			return false, nil
-		}
-	}
-	return true, nil
+	// 	fileSizeInByte, err := daemon.getDirectorySize("/mappings/" + fileName)
+	// 	if err != nil {
+	// 		return false, err
+	// 	}
+
+	// 	entryNumber := rand.Intn(int(fileSizeInByte) / entrySizeInByte)
+	// 	// TODO: change to use the read with byte offset, limit instead
+	// 	if err != nil {
+	// 		return false, err
+	// 	}
+	// 	key, cid := //somehow read the entryNumber th entry
+
+	// 	ok, err := validateMapping(daemon, key, cid)
+	// 	if err!=nil {
+	// 		return false, err
+	// 	}
+	// 	if !ok {
+	// 		return false, nil
+	// 	}
+	// }
+	// return true, nil
 }
 
 func validateMapping(daemon *ipfsRequest, key string, cid string) (bool, error) {
@@ -341,9 +399,78 @@ func (ipfs IPFS) IsDiscovered(key blueprint.Key) bool {
 	return discovered
 }
 
-func (ipfs IPFS) propageWrite(updatedMappingsIPNS string) error {
-	//TODO
+func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string) error {
+	// gossip broadcast updatedMappingsIPNS to 3 random peers
+	// TODO: using node-discovery endpoints instead
+	var peers []string = []string{"1.1.1.1","2.2.2.2","3.3.3.3","4.4.4.4"}
+	port := ":3101"
+
+	// grpc cluster server handler will spawn 3 goroutines to propagate call, but it will not wait for them to finish
+	// current implementation does not guarantee any node to receive the call
+	for i:= 0; i < math.Min(3,len(peer)); i++ {
+		go func() {
+			// randomly choose one peer
+			addr := peers[rand.Intn(len(peers))] + port		
+			//	make a grpc call to peer for the propagate_write grpc endpoint
+			conn, err := grpc.Dial(addr,grpc.WithTransportCredentials())
+			if err != nil {
+				log.Println("failed to connect to", addr)
+			}
+			defer conn.Close()
+			grpcclient := protos.NewImmutableStorageClusterClient(conn)
+			// Contact the server and print out its response.
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			_, err := grpcclient.PropagateWrite(ctx,&protos.PropagateWriteRequest{MappingsIPNS: myMappingsIPNS})
+			if err != nil {
+				log.Println("failed to propagate_write to", addr)
+			}
+			log.Println("Successfully propagate write to", addr)
+		}()
+	}
 	return nil
+}
+
+func (ipfs IPFS) initNodestxt() ([]string,error) {
+	// gossip broadcast updatedMappingsIPNS to 3 random peers
+	// TODO: using node-discovery endpoints instead
+	var peers []string = []string{"1.1.1.1","2.2.2.2","3.3.3.3","4.4.4.4"}
+	port := ":3101"
+
+	externalNodesIPNS := make([]string,math.Min(3,len(peers)))
+	var wg sync.WaitGroup
+	for i:= 0; i < math.Min(3,len(peers)); i++ {
+		wg.Add(1)
+		go func(jobID int) {
+			// randomly choose one peer
+			addr := peers[rand.Intn(len(peers))] + port		
+			//	make a grpc call to peer for the propagate_write grpc endpoint
+			conn, err := grpc.Dial(addr,grpc.WithTransportCredentials())
+			if err != nil {
+				log.Println("failed to connect to", addr)
+			}
+			defer conn.Close()
+			grpcclient := protos.NewImmutableStorageClusterClient(conn)
+			// Contact the server and print out its response.
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			res, err := grpcclient.GetNodetxtIPNS(ctx,&protos.GetNodetxtIPNSRequest{})
+			if err != nil {
+				log.Println("failed to propagate_write to", addr)
+			}else{
+				externalNodesIPNS[i] = res.NodetxtIPNS
+				log.Println("Successfully propagate write to", addr)
+			}
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+	for _, nodesIPNS := range externalNodesIPNS {
+		if len(nodesIPNS) > 0 {
+			return externalNodesIPNS, nil		
+		}
+	}
+	return nil, errors.New("all nodes failed to response")	
 }
 
 func (ipfs IPFS) sync(key blueprint.Key) (string, string) {
