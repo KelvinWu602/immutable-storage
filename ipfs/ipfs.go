@@ -79,7 +79,7 @@ func New(configFile string) (*IPFS, error) {
 	ipfs.mappingsIPNS = mappingsIPNS
 
 	//group init
-	newNodesIPNS, err = groupInitialization(daemon, oldNodesIPNS, time.Duration(config.timeout))
+	newNodesIPNS, err := groupInitialization(&ipfs, oldNodesIPNS, mappingsIPNS, time.Duration(config.timeout))
 	if err != nil {
 		log.Println("Error during groupInitialization...")
 		log.Println(err)
@@ -172,13 +172,13 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	mappingsIPNS, err = daemon.publishIPNSPointer(mappingsCID, "mappings")
+	mappingsIPNS, err := daemon.publishIPNSPointer(mappingsCID, "mappings")
 	if err != nil {
 		return "", "", err
 	}
 	log.Println("Successfully published mappingsIPNS:", mappingsIPNS)
 	// create and append mappingIPNS in file /nodes.txt with comma delimiter
-	_, err := daemon.getDirectoryCID("/nodes.txt")
+	_, err = daemon.getDirectoryCID("/nodes.txt")
 	if err == nil {
 		// if file exists, remove it
 		if err2 := daemon.removeFile("/nodes.txt", false); err2 != nil {
@@ -198,7 +198,7 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	nodesIPNS, err = daemon.publishIPNSPointer(nodesCID, "nodes")
+	nodesIPNS, err := daemon.publishIPNSPointer(nodesCID, "nodes")
 	if err != nil {
 		return "", "", err
 	}
@@ -209,12 +209,12 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 // groupInitialization returns nodesIPNS, err
 func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, timeout time.Duration) (string, error) {
 	log.Println("Start group initialization...")
-	if err := ipfs.propagateWrite(myMappingsIPNS); err != nil {
+	if err := ipfs.propagateWrite(myMappingsIPNS, timeout); err != nil {
 		return myNodesIPNS, err
 	}
 	log.Println("Successfully propagated write")
 
-	externalNodesIPNS, err := ipfs.initNodestxt()
+	externalNodesIPNS, err := ipfs.initNodestxt(timeout)
 	if err != nil {
 		return myNodesIPNS, err
 	}
@@ -253,13 +253,13 @@ func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, 
 			wg.Add(1)
 			go func() {
 				// check any random 1 record in the mappings
-				ok, err := validateMappingsIPNS(daemon, record, 1)
+				_, err := validateMappingsIPNS(ipfs.daemon, record, 1)
 				if err != nil {
 					wg.Done()
 					return
 				}
 				//append the record to my own nodes.txt
-				if err := daemon.appendStringToFile("/nodes.txt", record, nodestxtMaxSize); err != nil {
+				if err := ipfs.daemon.appendStringToFile("/nodes.txt", record, nodestxtMaxSize); err != nil {
 					wg.Done()
 					return
 				}
@@ -270,12 +270,12 @@ func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, 
 	wg.Wait()
 
 	// update the IPNS name for your nodes.txt
-	nodesCID, err := daemon.getDirectoryCID("/nodes.txt")
+	nodesCID, err := ipfs.daemon.getDirectoryCID("/nodes.txt")
 	if err != nil {
 		return "", err
 	}
-	nodesIPNS, err := daemon.publishIPNSPointer(nodesCID, "nodes")
-	return nodesIPFS, err
+	nodesIPNS, err := ipfs.daemon.publishIPNSPointer(nodesCID, "nodes")
+	return nodesIPNS, err
 }
 
 // parseNodesIPNS returns a slice of mappingsIPNS stored in the nodes.txt file pointed by nodesIPNS
@@ -315,7 +315,7 @@ func parseMappingsIPNS(daemon *ipfsRequest, mappingCID string) (map[blueprint.Ke
 	result := make(map[blueprint.Key]string)
 	for err == nil {
 		key := blueprint.Key(entry[:blueprint.KeySize])
-		cid := entry[blueprint.KeySize+1:]
+		cid := string(entry[blueprint.KeySize+1:])
 		result[key] = cid
 		entry, err = r.ReadSlice(';')
 	}
@@ -389,7 +389,7 @@ func (ipfs IPFS) IsDiscovered(key blueprint.Key) bool {
 	return discovered
 }
 
-func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string) error {
+func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string, timeout time.Duration) error {
 	// gossip broadcast updatedMappingsIPNS to 3 random peers
 	// TODO: using node-discovery endpoints instead
 	var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
@@ -397,12 +397,13 @@ func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string) error {
 
 	// grpc cluster server handler will spawn 3 goroutines to propagate call, but it will not wait for them to finish
 	// current implementation does not guarantee any node to receive the call
-	for i := 0; i < math.Min(3, len(peer)); i++ {
+	for i := 0; i < int(math.Min(3, float64(len(peers)))); i++ {
 		go func() {
 			// randomly choose one peer
 			addr := peers[rand.Intn(len(peers))] + port
 			//	make a grpc call to peer for the propagate_write grpc endpoint
-			conn, err := grpc.Dial(addr, grpc.WithTransportCredentials())
+			var opts []grpc.DialOption
+			conn, err := grpc.Dial(addr, opts...)
 			if err != nil {
 				log.Println("failed to connect to", addr)
 			}
@@ -411,7 +412,7 @@ func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string) error {
 			// Contact the server and print out its response.
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			_, err := grpcclient.PropagateWrite(ctx, &protos.PropagateWriteRequest{MappingsIPNS: myMappingsIPNS})
+			_, err = grpcclient.PropagateWrite(ctx, &protos.PropagateWriteRequest{MappingsIPNS: updatedMappingsIPNS})
 			if err != nil {
 				log.Println("failed to propagate_write to", addr)
 			}
@@ -421,21 +422,23 @@ func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string) error {
 	return nil
 }
 
-func (ipfs IPFS) initNodestxt() ([]string, error) {
+func (ipfs IPFS) initNodestxt(timeout time.Duration) ([]string, error) {
 	// gossip broadcast updatedMappingsIPNS to 3 random peers
 	// TODO: using node-discovery endpoints instead
 	var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
 	port := ":3101"
+	gossipSpan := int(math.Min(3, float64(len(peers))))
+	externalNodesIPNS := make([]string, gossipSpan)
 
-	externalNodesIPNS := make([]string, math.Min(3, len(peers)))
 	var wg sync.WaitGroup
-	for i := 0; i < math.Min(3, len(peers)); i++ {
+	for i := 0; i < gossipSpan; i++ {
 		wg.Add(1)
 		go func(jobID int) {
 			// randomly choose one peer
 			addr := peers[rand.Intn(len(peers))] + port
 			//	make a grpc call to peer for the propagate_write grpc endpoint
-			conn, err := grpc.Dial(addr, grpc.WithTransportCredentials())
+			var opts []grpc.DialOption
+			conn, err := grpc.Dial(addr, opts...)
 			if err != nil {
 				log.Println("failed to connect to", addr)
 			}
