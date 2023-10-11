@@ -8,17 +8,14 @@ import (
 	"net/http"
 	"os"
 	"time"
-
 	"github.com/go-yaml/yaml"
-
 	"github.com/KelvinWu602/immutable-storage/blueprint"
 )
 
+// A mapping page is a file under the /mappings MFS directory named with "<page_number>.txt". Each mapping page contains 512 entries at maximum.
 const mappingPageMaxSize uint64 = 512
+// The /nodes.txt file contains an array of IPNS name. nodestxtMaxSize is its maximum size in byte.
 const nodestxtMaxSize uint64 = 640000
-
-// TODO: find CID size
-const entrySizeInByte int = 32 + 32 + 16 // CID size + key size
 
 type cidProfile struct {
 	cid    string
@@ -39,8 +36,8 @@ type IPFS struct {
 }
 
 type config struct {
-	host    string `yaml:host`
-	timeout int    `yaml:timeout`
+	host    string `yaml:"host"`
+	timeout int    `yaml:"timeout"`
 }
 
 func New(configFile string) (*IPFS, error) {
@@ -92,6 +89,7 @@ func New(configFile string) (*IPFS, error) {
 	return &ipfs, nil
 }
 
+//
 func parseConfigFile(configFile string) (*config, error) {
 	// create the file descriptor
 	e := errors.New("failed to parse configFile")
@@ -129,12 +127,14 @@ func checkDaemonAlive(host string) error {
 	}
 }
 
-func lonelyInitialization(daemon *ipfsRequest) (mappingsIPNS string, nodesIPNS string, err error) {
+//lonelyInitialization returns mappingsIPNS, nodesIPNS, err
+func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	// TODO: also consider the case when existing IPNS are provided for mapping IPNS and nodesIPNS
 	// initialize public keys: nodes, mappings
+	log.Println("Started lonely initialization")
 	keyNames, err := daemon.listKeys()
 	if err != nil {
-		return
+		return "", "", err
 	}
 	initNodes := true
 	initMappings := true
@@ -146,22 +146,20 @@ func lonelyInitialization(daemon *ipfsRequest) (mappingsIPNS string, nodesIPNS s
 			initNodes = false
 		}
 	}
-
 	if initMappings {
 		if err = daemon.generateKey("mappings"); err != nil {
-			return
+			return "", "", err
 		}
 	}
-
 	if initNodes {
 		if err = daemon.generateKey("nodes"); err != nil {
-			return
+			return "", "", err
 		}
 	}
-
+	log.Println("Successfully created keys")
 	// create MFS directory /mappings
 	if err = daemon.createDirectory("/mappings"); err != nil {
-		return
+		return "", "", err
 	}
 	// publish IPNS name for directory /mappings
 	mappingsCID, err := daemon.getDirectoryCID("/mappings")

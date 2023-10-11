@@ -1,0 +1,32 @@
+syntax = "proto3";
+package server;
+
+option go_package = "./protos";
+
+service ImmutableStorageCluster {
+    rpc PropagateWrite(PropagateWriteRequest) returns (PropagateWriteResponse);
+    rpc Sync(SyncRequest) returns (SyncResponse);
+    rpc GetNodetxtIPNS(GetNodetxtIPNSRequest) returns (GetNodetxtIPNSResponse);
+}
+
+message PropagateWriteRequest {
+    string MappingsIPNS = 1;
+}
+
+message PropagateWriteResponse {}
+
+message SyncRequest {
+    bytes Key = 1;
+}
+
+message SyncResponse {
+    bool Found = 1;
+    string CID = 2;
+    string MappingsIPNS = 3;
+}
+
+message GetNodetxtIPNSRequest {}
+
+message GetNodetxtIPNSResponse {
+    string NodetxtIPNS = 1;
+}
