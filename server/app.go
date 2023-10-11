@@ -58,5 +58,12 @@ func (s ApplicationServer) AvailableKeys(
 	return &protos.AvailableKeysResponse{Keys: nil}, nil
 }
 
+func (s ApplicationServer) IsDiscovered(
+	ctx context.Context,
+	req *protos.IsDiscoveredRequest,
+) (*protos.IsDiscoveredResponse, error) {
+	return &protos.IsDiscoveredResponse{IsDiscovered: false}, nil
+}
+
 func (s ApplicationServer) mustEmbedUnimplementedImmutableStorageServer() {
 }

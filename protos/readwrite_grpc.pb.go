@@ -25,6 +25,7 @@ type ImmutableStorageClient interface {
 	Store(ctx context.Context, in *StoreRequest, opts ...grpc.CallOption) (*StoreResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
 	AvailableKeys(ctx context.Context, in *AvailableKeysRequest, opts ...grpc.CallOption) (*AvailableKeysResponse, error)
+	IsDiscovered(ctx context.Context, in *IsDiscoveredRequest, opts ...grpc.CallOption) (*IsDiscoveredResponse, error)
 }
 
 type immutableStorageClient struct {
@@ -62,6 +63,15 @@ func (c *immutableStorageClient) AvailableKeys(ctx context.Context, in *Availabl
 	return out, nil
 }
 
+func (c *immutableStorageClient) IsDiscovered(ctx context.Context, in *IsDiscoveredRequest, opts ...grpc.CallOption) (*IsDiscoveredResponse, error) {
+	out := new(IsDiscoveredResponse)
+	err := c.cc.Invoke(ctx, "/server.ImmutableStorage/IsDiscovered", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ImmutableStorageServer is the server API for ImmutableStorage service.
 // All implementations must embed UnimplementedImmutableStorageServer
 // for forward compatibility
@@ -69,6 +79,7 @@ type ImmutableStorageServer interface {
 	Store(context.Context, *StoreRequest) (*StoreResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
 	AvailableKeys(context.Context, *AvailableKeysRequest) (*AvailableKeysResponse, error)
+	IsDiscovered(context.Context, *IsDiscoveredRequest) (*IsDiscoveredResponse, error)
 	mustEmbedUnimplementedImmutableStorageServer()
 }
 
@@ -84,6 +95,9 @@ func (UnimplementedImmutableStorageServer) Read(context.Context, *ReadRequest) (
 }
 func (UnimplementedImmutableStorageServer) AvailableKeys(context.Context, *AvailableKeysRequest) (*AvailableKeysResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AvailableKeys not implemented")
+}
+func (UnimplementedImmutableStorageServer) IsDiscovered(context.Context, *IsDiscoveredRequest) (*IsDiscoveredResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IsDiscovered not implemented")
 }
 func (UnimplementedImmutableStorageServer) mustEmbedUnimplementedImmutableStorageServer() {}
 
@@ -152,6 +166,24 @@ func _ImmutableStorage_AvailableKeys_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ImmutableStorage_IsDiscovered_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsDiscoveredRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ImmutableStorageServer).IsDiscovered(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.ImmutableStorage/IsDiscovered",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ImmutableStorageServer).IsDiscovered(ctx, req.(*IsDiscoveredRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ImmutableStorage_ServiceDesc is the grpc.ServiceDesc for ImmutableStorage service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -170,6 +202,10 @@ var ImmutableStorage_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AvailableKeys",
 			Handler:    _ImmutableStorage_AvailableKeys_Handler,
+		},
+		{
+			MethodName: "IsDiscovered",
+			Handler:    _ImmutableStorage_IsDiscovered_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
