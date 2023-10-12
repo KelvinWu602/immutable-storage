@@ -1,19 +1,18 @@
-package server
+package ipfs
 
 import (
 	"context"
 
-	"github.com/KelvinWu602/immutable-storage/ipfs"
 	"github.com/KelvinWu602/immutable-storage/ipfs/protos"
 )
 
 type ClusterServer struct {
-	storage *ipfs.IPFS
+	storage *IPFS
 	protos.UnimplementedImmutableStorageClusterServer
 }
 
-func NewClusterServer(ipfsimpl *ipfs.IPFS) ClusterServer {
-	return ClusterServer{storage: ipfsimpl}
+func NewClusterServer(ipfsimpl *IPFS) *ClusterServer {
+	return &ClusterServer{storage: ipfsimpl}
 }
 
 func (s ClusterServer) PropagateWrite(ctx context.Context, req *protos.PropagateWriteRequest) (*protos.PropagateWriteResponse, error) {
@@ -28,7 +27,7 @@ func (s ClusterServer) Sync(ctx context.Context, req *protos.SyncRequest) (*prot
 	}, nil
 }
 
-func (s ClusterServer) GetNodetxtIPNS(ctx context.Context, req *protos.SyncRequest) (*protos.GetNodetxtIPNSResponse, error) {
+func (s ClusterServer) GetNodetxtIPNS(ctx context.Context, req *protos.GetNodetxtIPNSRequest) (*protos.GetNodetxtIPNSResponse, error) {
 	return &protos.GetNodetxtIPNSResponse{
 		NodetxtIPNS: "",
 	}, nil

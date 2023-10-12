@@ -1,12 +1,15 @@
+// An IPFS implementation of the ImmutableStorage interface.
 package ipfs
 
 import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -15,11 +18,16 @@ import (
 	"github.com/KelvinWu602/immutable-storage/blueprint"
 	"github.com/KelvinWu602/immutable-storage/ipfs/protos"
 	"github.com/go-yaml/yaml"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-// A mapping page is a file under the /mappings MFS directory named with "<page_number>.txt". Each mapping page contains 512 entries at maximum.
-const mappingPageMaxSize uint64 = 512
+// The maximum size in byte for an entry of <key>,<cid>;.
+const mappingEntryMaxSize uint64 = uint64(blueprint.KeySize) + 64
+
+// A mapping page is a file under the /mappings MFS directory named with "<page_number>.txt".
+const mappingPageMaxSize uint64 = 512 * mappingEntryMaxSize
 
 // The /nodes.txt file contains an array of IPNS name. nodestxtMaxSize is its maximum size in byte.
 const nodestxtMaxSize uint64 = 640000
@@ -36,6 +44,8 @@ type discoverProgressProfile struct {
 
 type IPFS struct {
 	daemon           *ipfsRequest
+	clusterServer    *ClusterServer
+	grpcServer       *grpc.Server
 	keyToCid         map[blueprint.Key]cidProfile
 	nodesIPNS        string
 	mappingsIPNS     string
@@ -88,8 +98,24 @@ func New(configFile string) (*IPFS, error) {
 	ipfs.nodesIPNS = newNodesIPNS
 
 	// start grpc server
-	// TODO: create inter-node grpc server
+	// TODO: Check if this work...
+	ipfs.grpcServer = grpc.NewServer()
+	ipfs.clusterServer = NewClusterServer(&ipfs)
+	protos.RegisterImmutableStorageClusterServer(ipfs.grpcServer, *ipfs.clusterServer)
+	reflection.Register(ipfs.grpcServer)
 
+	l, err := net.Listen("tcp", "127.0.0.1:3101")
+	if err != nil {
+		log.Println("failed to create gRPC server on port 3101")
+		log.Println(err)
+		return nil, e
+	}
+	if err := ipfs.grpcServer.Serve(l); err != nil {
+		log.Println("failed to create gRPC server on port 3101")
+		log.Println(err)
+		return nil, e
+	}
+	log.Println("Successfully created gRPC server on port 3101")
 	// start worker processes
 	// TODO: create worker functions
 
@@ -142,22 +168,12 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	initNodes := true
-	initMappings := true
-	for _, keyName := range keyNames {
-		if keyName == "mappings" {
-			initMappings = false
-		}
-		if keyName == "nodes" {
-			initNodes = false
-		}
-	}
-	if initMappings {
+	if !slices.Contains(keyNames, "mappings") {
 		if err = daemon.generateKey("mappings"); err != nil {
 			return "", "", err
 		}
 	}
-	if initNodes {
+	if !slices.Contains(keyNames, "nodes") {
 		if err = daemon.generateKey("nodes"); err != nil {
 			return "", "", err
 		}
@@ -190,7 +206,7 @@ func lonelyInitialization(daemon *ipfsRequest) (string, string, error) {
 	}
 	log.Println("Successfully cleaned old /nodes.txt")
 
-	if err = daemon.appendStringToFile("/nodes.txt", mappingsIPNS+",", nodestxtMaxSize); err != nil {
+	if err = daemon.appendStringToFile("/nodes.txt", mappingsIPNS+";", nodestxtMaxSize); err != nil {
 		return "", "", err
 	}
 	// publish IPNS name for file /nodes.txt
@@ -251,7 +267,7 @@ func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, 
 	for record, seen := range union {
 		if !seen {
 			wg.Add(1)
-			go func() {
+			go func(record string) {
 				// check any random 1 record in the mappings
 				_, err := validateMappingsIPNS(ipfs.daemon, record, 1)
 				if err != nil {
@@ -264,7 +280,7 @@ func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, 
 					return
 				}
 				wg.Done()
-			}()
+			}(record)
 		}
 	}
 	wg.Wait()
@@ -340,7 +356,7 @@ func validateMappingsIPNS(daemon *ipfsRequest, mappingsIPNS string, n int) (bool
 	for i := 0; i < n; i++ {
 		pageNumber := rand.Intn(len(filesNameToCid))
 
-		fileName := string(pageNumber) + ".txt"
+		fileName := fmt.Sprintf("%6d.txt", pageNumber)
 
 		entries, err := parseMappingsIPNS(daemon, filesNameToCid[fileName])
 		if err != nil {
@@ -366,7 +382,20 @@ func validateMapping(daemon *ipfsRequest, key blueprint.Key, cid string) (bool, 
 	// load the content of IPFS object with CID = cid
 	// compare the content header with the provided key
 	// if equal, check the checksum in the key, return true if everything is correct
-	return true, nil
+	file, err := daemon.readFileWithCID(cid)
+	if err != nil {
+		return false, err
+	}
+	r := bufio.NewReader(file)
+	message := make([]byte, 2048)
+	n, err := r.Read(message)
+	if err != nil {
+		return false, err
+	}
+	if n < blueprint.KeySize {
+		return false, nil
+	}
+	return blueprint.ValidateKey(key, message), nil
 }
 
 func (ipfs IPFS) Store(key blueprint.Key, message []byte) error {
@@ -380,8 +409,11 @@ func (ipfs IPFS) Read(key blueprint.Key) ([]byte, error) {
 }
 
 func (ipfs IPFS) AvailableKeys() []blueprint.Key {
-	//TODO
-	return []blueprint.Key{}
+	result := make([]blueprint.Key, len(ipfs.keyToCid))
+	for key := range ipfs.keyToCid {
+		result = append(result, key)
+	}
+	return result
 }
 
 func (ipfs IPFS) IsDiscovered(key blueprint.Key) bool {
@@ -428,34 +460,28 @@ func (ipfs IPFS) initNodestxt(timeout time.Duration) ([]string, error) {
 	var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
 	port := ":3101"
 	gossipSpan := int(math.Min(3, float64(len(peers))))
+	gossipTargets := randomNAddresses(peers, gossipSpan)
 	externalNodesIPNS := make([]string, gossipSpan)
 
 	var wg sync.WaitGroup
-	for i := 0; i < gossipSpan; i++ {
+	for i, ip := range gossipTargets {
 		wg.Add(1)
-		go func(jobID int) {
-			// randomly choose one peer
-			addr := peers[rand.Intn(len(peers))] + port
+		go func(jobID int, addr string) {
 			//	make a grpc call to peer for the propagate_write grpc endpoint
-			var opts []grpc.DialOption
-			conn, err := grpc.Dial(addr, opts...)
+			grpcclient, ctx, cancel, err := createClusterClient(addr, timeout)
 			if err != nil {
 				log.Println("failed to connect to", addr)
 			}
-			defer conn.Close()
-			grpcclient := protos.NewImmutableStorageClusterClient(conn)
-			// Contact the server and print out its response.
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			res, err := grpcclient.GetNodetxtIPNS(ctx, &protos.GetNodetxtIPNSRequest{})
+			defer (*cancel)()
+			res, err := grpcclient.GetNodetxtIPNS(*ctx, &protos.GetNodetxtIPNSRequest{})
 			if err != nil {
 				log.Println("failed to propagate_write to", addr)
 			} else {
-				externalNodesIPNS[i] = res.NodetxtIPNS
+				externalNodesIPNS[jobID] = res.NodetxtIPNS
 				log.Println("Successfully propagate write to", addr)
 			}
 			wg.Done()
-		}(i)
+		}(i, ip+port)
 	}
 	wg.Wait()
 	for _, nodesIPNS := range externalNodesIPNS {
@@ -479,4 +505,24 @@ func (ipfs IPFS) updateIndexDirectoryWorker() error {
 func (ipfs IPFS) updateMappingWorker() error {
 	//TODO
 	return nil
+}
+
+func randomNAddresses(addresses []string, n int) []string {
+	// addresses is assumed not to contain duplicates
+	if n < 0 {
+		return []string{}
+	}
+	if n >= len(addresses) {
+		return addresses
+	}
+	result := make([]string, n)
+	i := 0
+	for i < n {
+		selected := addresses[rand.Intn(len(addresses))]
+		if !slices.Contains(result, selected) {
+			result[i] = selected
+			i++
+		}
+	}
+	return result
 }
