@@ -120,7 +120,6 @@ func (req *ipfsRequest) readFileWithPath(path string, offset uint64) (io.ReadClo
 }
 
 func (req *ipfsRequest) readFileWithCID(cid string) (io.ReadCloser, error) {
-	//TODO
 	content, err := req.sh.Cat(cid)
 	if err != nil {
 		log.Println(err)
@@ -152,6 +151,7 @@ type DagGetJson struct {
 	Links []Hash    `json:"Links"`
 }
 
+// getDAGLinks returns a map with file name or directory name as key, cid as values.
 func (req *ipfsRequest) getDAGLinks(cid string) (map[string]string, error) {
 	var resJson DagGetJson
 	err := req.sh.DagGet(cid, &resJson)
