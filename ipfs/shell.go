@@ -1,6 +1,7 @@
 package ipfs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -87,6 +88,15 @@ func (req *ipfsRequest) appendStringToFile(
 		log.Println(err)
 	}
 	return err
+}
+
+func (req *ipfsRequest) addFile(content []byte) (string, error) {
+	cid, err := req.sh.Add(bytes.NewReader(content))
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	return cid, nil
 }
 
 func (req *ipfsRequest) removeFile(path string, recursive bool) error {

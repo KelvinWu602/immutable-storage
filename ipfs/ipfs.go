@@ -402,6 +402,20 @@ func validateMapping(daemon *ipfsRequest, key blueprint.Key, cid string) (bool, 
 
 func (ipfs IPFS) Store(key blueprint.Key, message []byte) error {
 	// TODO
+	if !blueprint.ValidateKey(key, message) {
+		return errors.New("invalid key")
+	}
+	// store the message on ipfs
+	cid, err := ipfs.daemon.addFile(message)
+	if err != nil {
+		return err
+	}
+	// append the cid in the current mapping file
+	// TODO handle offset, next page logic
+	keyStr := string(key[:])
+	ipfs.daemon.appendStringToFile("/mappings/???...", keyStr+","+cid+";", mappingPageMaxSize)
+
+	// TODO propagate write
 	return nil
 }
 
