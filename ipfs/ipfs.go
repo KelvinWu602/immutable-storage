@@ -32,27 +32,31 @@ const mappingPageMaxSize uint64 = 512 * mappingEntryMaxSize
 // The /nodes.txt file contains an array of IPNS name. nodestxtMaxSize is its maximum size in byte.
 const nodestxtMaxSize uint64 = 640000
 
+// cidProfile stores info associated with a message stored on IPFS.
 type cidProfile struct {
-	cid    string
-	source string
+	cid    string // cid is the IPFS CID of the stored message.
+	source string // source is the IPNS record name of the /mappings directory of the node that stored the message.
 }
 
+// mappingEntry represents an entry in the mapping pages of a node, with the form of <key>,<cid>;
 type mappingEntry struct {
-	key blueprint.Key
-	cid string
+	key blueprint.Key // key is the logical key associated with the stored message.
+	cid string        // cid is the IPFS CID of the stored message.
 }
 
+// discoverProgressProfile represents the progress for this node to catch up existing records of a particular remote node.
 type discoverProgressProfile struct {
-	nextReadPage        uint
-	nextReadEntryOffset uint
-	lastCommitCID       string
+	nextReadPage        uint   // nextReadPage stores the number of page this node has read.
+	nextReadEntryOffset uint   // nextReadEntryOffset stores the number of entries in the current page this node has read.
+	lastCommitCID       string // lastCommitCID stores the CID of the /mappings of the remote node, used to detect changes since previous read.
 }
 
+// IPFS implements blueprint.ImmutableStorage.
 type IPFS struct {
-	daemon           *ipfsRequest
+	daemon           *ipfsRequest // daemon object is used to talk to the IPFS daemon.
 	clusterServer    *ClusterServer
 	grpcServer       *grpc.Server
-	keyToCid         map[blueprint.Key]cidProfile
+	keyToCid         map[blueprint.Key]cidProfile // keyToCid stores
 	nodesIPNS        string
 	mappingsIPNS     string
 	discoverProgress map[string]discoverProgressProfile
@@ -416,6 +420,24 @@ func (ipfs IPFS) Store(key blueprint.Key, message []byte) error {
 	ipfs.daemon.appendStringToFile("/mappings/???...", keyStr+","+cid+";", mappingPageMaxSize)
 
 	// TODO propagate write
+	var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"}
+	// TODO: 3 should be configurable
+	for i := 0; i < 3; i++ {
+		addr := peers[rand.Intn(len(peers))]
+		grpcclient, ctx, cancel, err := createClusterClient(addr, ipfs.daemon.timeout) // TODO: daemon is not supposed to use in this way
+		if err != nil {
+			log.Println("error occured when Propagate Write.")
+			log.Println(err)
+			continue
+		}
+		_, err = grpcclient.PropagateWrite(*ctx, &protos.PropagateWriteRequest{})
+		defer (*cancel)()
+		if err != nil {
+			log.Println("error occured when Propagate Write.")
+			log.Println(err)
+			continue
+		}
+	}
 	return nil
 }
 

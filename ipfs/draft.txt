@@ -58,6 +58,7 @@ mappings/<page number>.txt
 
 object relationship:
 
+ApplicationServer
+
 ImmutableStorage (interface)
 
-ApplicationServer
