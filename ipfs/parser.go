@@ -50,7 +50,7 @@ func openFileWithPath(path string) io.ReadCloser {
 
 // openFile returns the io.ReadCloser of an IPFS object pointed by IPNS name.
 // returns a nil pointer if any error occured
-func openFileWithIPNS(daemon *ipfsRequest, ipns string) io.ReadCloser {
+func openFileWithIPNS(daemon *ipfsClient, ipns string) io.ReadCloser {
 	cid, err := daemon.resolveIPNSPointer(ipns)
 	if err != nil {
 		log.Println(err)
@@ -66,7 +66,7 @@ func openFileWithIPNS(daemon *ipfsRequest, ipns string) io.ReadCloser {
 
 // openFile returns the io.ReadCloser of an IPFS object pointed by CID.
 // returns a nil pointer if any error occured
-func openFileWithCID(daemon *ipfsRequest, cid string) io.ReadCloser {
+func openFileWithCID(daemon *ipfsClient, cid string) io.ReadCloser {
 	file, err := daemon.readFileWithCID(cid)
 	if err != err {
 		log.Println(err)

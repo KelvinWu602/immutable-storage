@@ -13,17 +13,17 @@ import (
 	shell "github.com/ipfs/go-ipfs-api"
 )
 
-type ipfsRequest struct {
+type ipfsClient struct {
 	sh      *shell.Shell
 	cli     *http.Client
 	timeout time.Duration
 }
 
-func newIPFSClient(host string, timeout time.Duration) *ipfsRequest {
-	return &ipfsRequest{shell.NewShell(host), &http.Client{}, timeout}
+func newIPFSClient(host string, timeout time.Duration) *ipfsClient {
+	return &ipfsClient{shell.NewShell(host), &http.Client{}, timeout}
 }
 
-func (req *ipfsRequest) createDirectory(path string) error {
+func (req *ipfsClient) createDirectory(path string) error {
 	// create timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
@@ -36,7 +36,7 @@ func (req *ipfsRequest) createDirectory(path string) error {
 	return err
 }
 
-func (req *ipfsRequest) getDirectoryCID(path string) (string, error) {
+func (req *ipfsClient) getDirectoryCID(path string) (string, error) {
 	// create timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
@@ -50,7 +50,7 @@ func (req *ipfsRequest) getDirectoryCID(path string) (string, error) {
 	return res.Hash, nil
 }
 
-func (req *ipfsRequest) getDirectorySize(path string) (uint64, error) {
+func (req *ipfsClient) getDirectorySize(path string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 
@@ -62,7 +62,7 @@ func (req *ipfsRequest) getDirectorySize(path string) (uint64, error) {
 	return res.Size, nil
 }
 
-func (req *ipfsRequest) appendStringToFile(
+func (req *ipfsClient) appendStringToFile(
 	path string,
 	content string,
 	fileSizeLimit uint64,
@@ -90,7 +90,7 @@ func (req *ipfsRequest) appendStringToFile(
 	return err
 }
 
-func (req *ipfsRequest) addFile(content []byte) (string, error) {
+func (req *ipfsClient) addFile(content []byte) (string, error) {
 	cid, err := req.sh.Add(bytes.NewReader(content))
 	if err != nil {
 		log.Println(err)
@@ -99,7 +99,7 @@ func (req *ipfsRequest) addFile(content []byte) (string, error) {
 	return cid, nil
 }
 
-func (req *ipfsRequest) removeFile(path string, recursive bool) error {
+func (req *ipfsClient) removeFile(path string, recursive bool) error {
 	// create timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
@@ -111,7 +111,7 @@ func (req *ipfsRequest) removeFile(path string, recursive bool) error {
 	return err
 }
 
-func (req *ipfsRequest) readFileWithPath(path string, offset uint64) (io.ReadCloser, error) {
+func (req *ipfsClient) readFileWithPath(path string, offset uint64) (io.ReadCloser, error) {
 	options := func(rb *shell.RequestBuilder) error {
 		rb.Option("offset", offset)
 		return nil
@@ -129,7 +129,7 @@ func (req *ipfsRequest) readFileWithPath(path string, offset uint64) (io.ReadClo
 	return content, err
 }
 
-func (req *ipfsRequest) readFileWithCID(cid string) (io.ReadCloser, error) {
+func (req *ipfsClient) readFileWithCID(cid string) (io.ReadCloser, error) {
 	content, err := req.sh.Cat(cid)
 	if err != nil {
 		log.Println(err)
@@ -162,7 +162,7 @@ type DagGetJson struct {
 }
 
 // getDAGLinks returns a map with file name or directory name as key, cid as values.
-func (req *ipfsRequest) getDAGLinks(cid string) (map[string]string, error) {
+func (req *ipfsClient) getDAGLinks(cid string) (map[string]string, error) {
 	var resJson DagGetJson
 	err := req.sh.DagGet(cid, &resJson)
 	if err != nil {
@@ -178,7 +178,7 @@ func (req *ipfsRequest) getDAGLinks(cid string) (map[string]string, error) {
 	return links, nil
 }
 
-func (req *ipfsRequest) publishIPNSPointer(cid string, key string) (string, error) {
+func (req *ipfsClient) publishIPNSPointer(cid string, key string) (string, error) {
 	//TODO research on the effect of lifetime, see if any further actions are required to keep IPNS record alive
 	res, err := req.sh.PublishWithDetails(cid, key, 100*365*24*time.Hour, 5*time.Minute, true)
 	if err != nil {
@@ -188,7 +188,7 @@ func (req *ipfsRequest) publishIPNSPointer(cid string, key string) (string, erro
 	return res.Name, nil
 }
 
-func (req *ipfsRequest) resolveIPNSPointer(ipns string) (string, error) {
+func (req *ipfsClient) resolveIPNSPointer(ipns string) (string, error) {
 	res, err := req.sh.Resolve(ipns)
 	if err != nil {
 		log.Println(err)
@@ -197,14 +197,14 @@ func (req *ipfsRequest) resolveIPNSPointer(ipns string) (string, error) {
 	return res, nil
 }
 
-func (req *ipfsRequest) generateKey(name string) error {
+func (req *ipfsClient) generateKey(name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 	_, err := req.sh.KeyGen(ctx, name, func(rb *shell.RequestBuilder) error { return nil })
 	return err
 }
 
-func (req *ipfsRequest) listKeys() ([]string, error) {
+func (req *ipfsClient) listKeys() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), req.timeout)
 	defer cancel()
 	res, err := req.sh.KeyList(ctx)
