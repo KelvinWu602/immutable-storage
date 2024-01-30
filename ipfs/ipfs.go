@@ -62,11 +62,6 @@ type IPFS struct {
 	discoverProgress map[string]discoverProgressProfile
 }
 
-type config struct {
-	host    string `yaml:"host"`
-	timeout int    `yaml:"timeout"`
-}
-
 func New(configFile string) (*IPFS, error) {
 	// TODO: starting the workers
 	e := errors.New("failed to initialize immutable-storage")
@@ -78,7 +73,7 @@ func New(configFile string) (*IPFS, error) {
 		return nil, e
 	}
 	//send HEAD request to <host>/api/v0/id
-	err = checkDaemonAlive(config.host)
+	err = checkDaemonAlive(config.Host)
 	if err != nil {
 		log.Println("Error during checkDaemonAlive...")
 		log.Println(err)
@@ -87,7 +82,7 @@ func New(configFile string) (*IPFS, error) {
 	//create new IPFS struct
 	var ipfs IPFS
 	//set up ipfs daemon
-	ipfs.daemon = newIPFSClient(config.host, time.Duration(config.timeout))
+	ipfs.daemon = newIPFSClient(config.Host, time.Duration(config.Timeout))
 	//initialize node state (lonely init + group init)
 	//lonely init
 	mappingsIPNS, oldNodesIPNS, err := lonelyInitialization(ipfs.daemon)
@@ -99,7 +94,7 @@ func New(configFile string) (*IPFS, error) {
 	ipfs.mappingsIPNS = mappingsIPNS
 
 	//group init
-	newNodesIPNS, err := groupInitialization(&ipfs, oldNodesIPNS, mappingsIPNS, time.Duration(config.timeout))
+	newNodesIPNS, err := groupInitialization(&ipfs, oldNodesIPNS, mappingsIPNS, time.Duration(config.Timeout))
 	if err != nil {
 		log.Println("Error during groupInitialization...")
 		log.Println(err)
