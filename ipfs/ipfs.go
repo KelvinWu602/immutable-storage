@@ -5,14 +5,12 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"math"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/KelvinWu602/immutable-storage/blueprint"
@@ -268,27 +266,27 @@ func groupInitialization(ipfs *IPFS, myNodesIPNS string, myMappingsIPNS string, 
 	}
 
 	// for each unseen record, validate, append to your own nodes.txt file if validated, discard if not
-	var wg sync.WaitGroup
-	for record, seen := range union {
-		if !seen {
-			wg.Add(1)
-			go func(record string) {
-				// check any random 1 record in the mappings
-				_, err := validateMappingsIPNS(ipfs.daemon, record, 1)
-				if err != nil {
-					wg.Done()
-					return
-				}
-				//append the record to my own nodes.txt
-				if err := ipfs.daemon.appendStringToFile("/nodes.txt", record, nodestxtMaxSize); err != nil {
-					wg.Done()
-					return
-				}
-				wg.Done()
-			}(record)
-		}
-	}
-	wg.Wait()
+	// var wg sync.WaitGroup
+	// for record, seen := range union {
+	// 	if !seen {
+	// 		// wg.Add(1)
+	// 		// go func(record string) {
+	// 		// 	// check any random 1 record in the mappings
+	// 		// 	_, err := validateMappingsIPNS(ipfs.daemon, record, 1)
+	// 		// 	if err != nil {
+	// 		// 		wg.Done()
+	// 		// 		return
+	// 		// 	}
+	// 		// 	//append the record to my own nodes.txt
+	// 		// 	if err := ipfs.daemon.appendStringToFile("/nodes.txt", record, nodestxtMaxSize); err != nil {
+	// 		// 		wg.Done()
+	// 		// 		return
+	// 		// 	}
+	// 		// 	wg.Done()
+	// 		// }(record)
+	// 	}
+	// }
+	// wg.Wait()
 
 	// update the IPNS name for your nodes.txt
 	nodesCID, err := ipfs.daemon.getDirectoryCID("/nodes.txt")
@@ -345,58 +343,6 @@ func parseMappingsCID(daemon *ipfsClient, mappingCID string) ([]mappingEntry, er
 		return nil, err
 	}
 	return result, nil
-}
-
-func validateMappingsIPNS(daemon *ipfsClient, mappingsIPNS string, n int) (bool, error) {
-	// randomly pick n entries and check their validness
-
-	mappingsCID, err := daemon.resolveIPNSPointer(mappingsIPNS)
-	if err != nil {
-		return false, err
-	}
-	filesNameToCid, err := daemon.getDAGLinks(mappingsCID)
-	if err != nil {
-		return false, err
-	}
-
-	for i := 0; i < n; i++ {
-		pageNumber := uint(rand.Intn(len(filesNameToCid)))
-
-		fileName := pageNumberToFileName(pageNumber)
-
-		entries, err := parseMappingsCID(daemon, filesNameToCid[fileName])
-		if err != nil {
-			return false, err
-		}
-
-		target := entries[rand.Intn(len(entries))]
-
-		ok, err := validateMapping(daemon, target.key, target.cid)
-		if err != nil || !ok {
-			return false, err
-		}
-	}
-	return true, nil
-}
-
-func validateMapping(daemon *ipfsClient, key blueprint.Key, cid string) (bool, error) {
-	// load the content of IPFS object with CID = cid
-	// compare the content header with the provided key
-	// if equal, check the checksum in the key, return true if everything is correct
-	file, err := daemon.readFileWithCID(cid)
-	if err != nil {
-		return false, err
-	}
-	r := bufio.NewReader(file)
-	message := make([]byte, 2048)
-	n, err := r.Read(message)
-	if err != nil {
-		return false, err
-	}
-	if n < blueprint.KeySize {
-		return false, nil
-	}
-	return blueprint.ValidateKey(key, message), nil
 }
 
 func (ipfs IPFS) Store(key blueprint.Key, message []byte) error {
@@ -490,38 +436,38 @@ func (ipfs IPFS) propagateWrite(updatedMappingsIPNS string, timeout time.Duratio
 func (ipfs IPFS) initNodestxt(timeout time.Duration) ([]string, error) {
 	// gossip broadcast updatedMappingsIPNS to 3 random peers
 	// TODO: using node-discovery endpoints instead
-	var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
-	port := ":3101"
-	gossipSpan := int(math.Min(3, float64(len(peers))))
-	gossipTargets := randomNAddresses(peers, gossipSpan)
-	externalNodesIPNS := make([]string, gossipSpan)
+	// var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
+	// port := ":3101"
+	// gossipSpan := int(math.Min(3, float64(len(peers))))
+	// gossipTargets := randomNAddresses(peers, gossipSpan)
+	// externalNodesIPNS := make([]string, gossipSpan)
 
-	var wg sync.WaitGroup
-	for i, ip := range gossipTargets {
-		wg.Add(1)
-		go func(jobID int, addr string) {
-			// //	make a grpc call to peer for the GetNodetxtIPNS grpc endpoint
-			// grpcclient, ctx, cancel, err := createClusterClient(addr, timeout)
-			// if err != nil {
-			// 	log.Println("failed to connect to", addr)
-			// }
-			// defer (*cancel)()
-			// res, err := grpcclient.GetNodetxtIPNS(*ctx, &protos.GetNodetxtIPNSRequest{})
-			// if err != nil {
-			// 	log.Println("failed to GetNodetxtIPNS from", addr)
-			// } else {
-			// 	externalNodesIPNS[jobID] = res.NodetxtIPNS
-			// 	log.Println("Successfully get nodes.txt IPNS from", addr)
-			// }
-			wg.Done()
-		}(i, ip+port)
-	}
-	wg.Wait()
-	for _, nodesIPNS := range externalNodesIPNS {
-		if len(nodesIPNS) > 0 {
-			return externalNodesIPNS, nil
-		}
-	}
+	// var wg sync.WaitGroup
+	// for i, ip := range gossipTargets {
+	// 	wg.Add(1)
+	// 	go func(jobID int, addr string) {
+	// 		// //	make a grpc call to peer for the GetNodetxtIPNS grpc endpoint
+	// 		// grpcclient, ctx, cancel, err := createClusterClient(addr, timeout)
+	// 		// if err != nil {
+	// 		// 	log.Println("failed to connect to", addr)
+	// 		// }
+	// 		// defer (*cancel)()
+	// 		// res, err := grpcclient.GetNodetxtIPNS(*ctx, &protos.GetNodetxtIPNSRequest{})
+	// 		// if err != nil {
+	// 		// 	log.Println("failed to GetNodetxtIPNS from", addr)
+	// 		// } else {
+	// 		// 	externalNodesIPNS[jobID] = res.NodetxtIPNS
+	// 		// 	log.Println("Successfully get nodes.txt IPNS from", addr)
+	// 		// }
+	// 		wg.Done()
+	// 	}(i, ip+port)
+	// }
+	// wg.Wait()
+	// for _, nodesIPNS := range externalNodesIPNS {
+	// 	if len(nodesIPNS) > 0 {
+	// 		return externalNodesIPNS, nil
+	// 	}
+	// }
 	return nil, errors.New("all nodes failed to response")
 }
 
@@ -532,163 +478,4 @@ func (ipfs IPFS) sync(key blueprint.Key) (string, string) {
 		return cidProfile.cid, cidProfile.source
 	}
 	return "", ""
-}
-
-func (ipfs IPFS) updateIndexDirectoryWorker(timeout time.Duration) {
-	//TODO
-
-	// for each round
-	for {
-		// obtain ip list
-		// peers := []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"}
-		// port := "3101"
-		// for _, peer := range peers {
-		// 	// addr := peer + port
-		// 	// //	make a grpc call to peer for the  grpc endpoint
-		// 	// grpcclient, ctx, cancel, err := createClusterClient(addr, timeout)
-		// 	// if err != nil {
-		// 	// 	log.Println("failed to connect to", addr)
-		// 	// }
-		// 	// res, err := grpcclient.GetNodetxtIPNS(*ctx, &protos.GetNodetxtIPNSRequest{})
-		// 	// if err != nil {
-		// 	// 	log.Println("failed to GetNodetxtIPNS from", addr)
-		// 	// }
-		// 	// log.Println("Successfully GetNodetxtIPNS from", addr)
-		// 	// (*cancel)()
-
-		// 	// ok, err := validateMappingsIPNS(ipfs.daemon, res.NodetxtIPNS, 1)
-		// 	// if err != nil || !ok {
-		// 	// 	log.Println("received an invalid IPNS")
-		// 	// 	continue
-		// 	// }
-		// 	// seen := make(map[string]bool) // ipns -> seen
-		// 	// existing, err := parseNodesIPNS(ipfs.daemon, ipfs.nodesIPNS)
-		// 	// if err != nil {
-		// 	// 	log.Println(err)
-		// 	// 	continue
-		// 	// }
-		// 	// for _, entry := range existing {
-		// 	// 	seen[entry] = true
-		// 	// }
-		// 	// external, err := parseNodesIPNS(ipfs.daemon, res.NodetxtIPNS)
-		// 	// if err != nil {
-		// 	// 	log.Println(err)
-		// 	// 	continue
-		// 	// }
-		// 	// for _, entry := range external {
-		// 	// 	// append entry to nodes.txt
-		// 	// 	if err := ipfs.daemon.appendStringToFile("/nodes.txt", entry+";", nodestxtMaxSize); err != nil {
-		// 	// 		log.Println("error when append new IPNS to nodes.txt, source =", res.NodetxtIPNS)
-		// 	// 		log.Println(err)
-		// 	// 		continue
-		// 	// 	}
-		// 	// }
-		// }
-	}
-}
-
-func (ipfs IPFS) updateMappingWorker() {
-	//TODO: allow termination of main goroutine to terminate the worker as well
-	//TODO: consider retrying mechanism when discover a page or record fails due to network errors (using a DLQ)
-
-	// for each round
-	for {
-		// obtain the current list of ipns from local nodes.txt
-		ipnsRecords, err := parseNodesIPNS(ipfs.daemon, ipfs.nodesIPNS)
-		if err != nil {
-			// print the error, wait for 1s, continue
-			log.Println(err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		for _, ipns := range ipnsRecords {
-			//check if we have created a profile for it
-			progress, ok := ipfs.discoverProgress[ipns]
-			if !ok {
-				//first time seeing the ipns, initialize discover progress profile
-				ipfs.discoverProgress[ipns] = discoverProgressProfile{
-					nextReadPage:        0,
-					nextReadEntryOffset: 0,
-					lastCommitCID:       "",
-				}
-			}
-
-			//check if the /mappings cid changed
-			cid, err := ipfs.daemon.resolveIPNSPointer(ipns)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			if progress.lastCommitCID != cid {
-				// get all mapping pages filenames and cids
-				mappingPages, err := ipfs.daemon.getDAGLinks(cid)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-
-				// while there is page haven't been read
-				for progress.nextReadPage < uint(len(mappingPages)) {
-					nextReadFileName := pageNumberToFileName(progress.nextReadPage)
-					nextReadFileCid, ok := mappingPages[nextReadFileName]
-					if !ok {
-						// if a certain page is unfound, skip it
-						log.Printf("Cannot find %s in IPNS %s\n", nextReadFileName, ipns)
-						progress.nextReadPage++
-						continue
-					}
-					entries, err := parseMappingsCID(ipfs.daemon, nextReadFileCid)
-					if err != nil {
-						// if a certain page content is invalid, skip it
-						log.Println(err)
-						progress.nextReadPage++
-						continue
-					}
-					for row := progress.nextReadEntryOffset; row < uint(len(entries)); row++ {
-						entry := entries[row]
-						ok, err := validateMapping(ipfs.daemon, entry.key, entry.cid)
-						if err != nil || !ok {
-							log.Println("Found an invalid entry")
-							continue
-						}
-						// add the entry into keyToCid
-						ipfs.keyToCid[entry.key] = cidProfile{cid: entry.cid, source: ipns}
-					}
-					// update the nextReadEntryOffset
-					progress.nextReadEntryOffset = uint(len(entries))
-					if progress.nextReadEntryOffset >= 512 {
-						progress.nextReadEntryOffset = 0
-						progress.nextReadPage++
-					}
-				}
-				// update the last commit CID
-				progress.lastCommitCID = cid
-			}
-			ipfs.discoverProgress[ipns] = progress
-		}
-	}
-}
-
-func randomNAddresses(addresses []string, n int) []string {
-	// addresses is assumed not to contain duplicates
-	if n < 0 {
-		return []string{}
-	}
-	if n >= len(addresses) {
-		return addresses
-	}
-	result := make([]string, n)
-	i := 0
-	for i < n {
-		selected := addresses[rand.Intn(len(addresses))]
-		if !slices.Contains(result, selected) {
-			result[i] = selected
-			i++
-		}
-	}
-	return result
-}
-
-func pageNumberToFileName(pageNumber uint) string {
-	return fmt.Sprintf("%6d.txt", pageNumber)
 }

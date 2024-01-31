@@ -10,7 +10,10 @@ import (
 
 func TestOpenFileWithPath(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/test-openFileWithPath.txt"
-	file := openFileWithPath(filePath)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
 	defer file.Close()
 	content, err := io.ReadAll(file)
 	if err != nil {
@@ -21,8 +24,12 @@ func TestOpenFileWithPath(t *testing.T) {
 
 func TestParseConfigWithValidFormat(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/mock-config-valid.yml"
-	file := openFileWithPath(filePath)
-	config := parseConfig(file)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
+	defer file.Close()
+	config, _ := parseConfig(file)
 
 	assert := assert.New(t)
 	assert.Equal("localhost:5001", config.Host, "config.Host should be 'localhost:5001'.")
@@ -31,8 +38,12 @@ func TestParseConfigWithValidFormat(t *testing.T) {
 
 func TestParseConfigWithInvalidFormat(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/mock-config-invalid.yml"
-	file := openFileWithPath(filePath)
-	config := parseConfig(file)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
+	defer file.Close()
+	config, _ := parseConfig(file)
 
 	assert := assert.New(t)
 	// expected to be equal defaultConfig
@@ -42,8 +53,12 @@ func TestParseConfigWithInvalidFormat(t *testing.T) {
 
 func TestParseNodestxt(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/mock-nodes.txt"
-	file := openFileWithPath(filePath)
-	nodesIPNS := parseNodestxt(file)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
+	defer file.Close()
+	nodesIPNS, _ := parseNodestxt(file)
 
 	assert := assert.New(t)
 	assert.Equal(5, len(nodesIPNS), "length of nodesIPNS should be 5.")
@@ -56,8 +71,12 @@ func TestParseNodestxt(t *testing.T) {
 
 func TestParseMappings(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/mock-mappings.txt"
-	file := openFileWithPath(filePath)
-	mappings := parseMappings(file)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
+	defer file.Close()
+	mappings, _ := parseMappings(file)
 
 	assert := assert.New(t)
 	assert.Equal(3, len(mappings), "size of mappings should be 3.")
@@ -74,7 +93,11 @@ func TestParseMappings(t *testing.T) {
 
 func TestParseMessage(t *testing.T) {
 	const filePath string = "../testing-assets/ipfs/parser/mock-message.txt"
-	file := openFileWithPath(filePath)
+	file, err := openFileWithPath(filePath)
+	if err != nil {
+		t.Fatalf("error when calling openFileWithPath(): %s", err)
+	}
+	defer file.Close()
 	message, err := parseMessage(file)
 	if err != nil {
 		t.Fatalf("error when calling parseMessage(file): %s", err)

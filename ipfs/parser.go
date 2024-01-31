@@ -2,6 +2,7 @@ package ipfs
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -34,50 +35,56 @@ var defaultConfig config = config{
 	Timeout: 2000,
 }
 
+var errParseConfig error = errors.New("parseConfigError")
+var errParseNodestxt error = errors.New("parseNodestxtError")
+var errParseMappings error = errors.New("parseMappingsError")
+
+var errOpenFile error = errors.New("openFileError")
+
 // Functions for getting current network states. They should not mutate the network states.
 // These functions are expected to be mocked during a unit test for the parse functions.
 
 // openFile returns the io.ReadCloser of a file located at path
 // returns a nil pointer if any error occured
-func openFileWithPath(path string) io.ReadCloser {
+func openFileWithPath(path string) (io.ReadCloser, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, errOpenFile
 	}
-	return file
+	return file, nil
 }
 
 // openFile returns the io.ReadCloser of an IPFS object pointed by IPNS name.
 // returns a nil pointer if any error occured
-func openFileWithIPNS(daemon *ipfsClient, ipns string) io.ReadCloser {
+func openFileWithIPNS(daemon *ipfsClient, ipns string) (io.ReadCloser, error) {
 	cid, err := daemon.resolveIPNSPointer(ipns)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, errOpenFile
 	}
 	file, err := daemon.readFileWithCID(cid)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, errOpenFile
 	}
-	return file
+	return file, nil
 }
 
 // openFile returns the io.ReadCloser of an IPFS object pointed by CID.
 // returns a nil pointer if any error occured
-func openFileWithCID(daemon *ipfsClient, cid string) io.ReadCloser {
+func openFileWithCID(daemon *ipfsClient, cid string) (io.ReadCloser, error) {
 	file, err := daemon.readFileWithCID(cid)
 	if err != err {
 		log.Println(err)
-		return nil
+		return nil, errOpenFile
 	}
-	return file
+	return file, nil
 }
 
 // parseConfig returns the pointer to a config struct which represents the file
 // returns the defaultConfig when any error occured
-func parseConfig(file io.ReadCloser) config {
+func parseConfig(file io.ReadCloser) (config, error) {
 	// Ignore file closing error as we only read file content
 	// see https://www.joeshaw.org/dont-defer-close-on-writable-files/
 	defer file.Close()
@@ -87,16 +94,16 @@ func parseConfig(file io.ReadCloser) config {
 	resultLength, err := fileReader.Read(buffer)
 	if err != nil {
 		log.Println(err)
-		return defaultConfig
+		return defaultConfig, errParseConfig
 	}
 	// parse the input data using yaml parser
 	var config config
 	err = yaml.Unmarshal(buffer[:resultLength], &config)
 	if err != nil {
 		log.Println(err)
-		return defaultConfig
+		return defaultConfig, errParseConfig
 	}
-	return config
+	return config, nil
 }
 
 // parseNodestxt returns a slice of mappingsIPNS stored in the nodes.txt file pointed by nodesIPNS
@@ -104,7 +111,7 @@ func parseConfig(file io.ReadCloser) config {
 //
 // nodes.txt is expected to have the following format for each entry:
 // <ipns>;
-func parseNodestxt(file io.ReadCloser) []string {
+func parseNodestxt(file io.ReadCloser) ([]string, error) {
 	// Ignore file closing error as we only read file content
 	defer file.Close()
 	fileReader := bufio.NewReader(file)
@@ -118,9 +125,9 @@ func parseNodestxt(file io.ReadCloser) []string {
 		entry, err = fileReader.ReadSlice(';')
 	}
 	if err != nil && err != io.EOF {
-		return make([]string, 0)
+		return make([]string, 0), errParseNodestxt
 	}
-	return mappingsIPNSs
+	return mappingsIPNSs, nil
 }
 
 // parseMappingsCID returns a slice of mappingEntry struct with a maximum size of 512
@@ -128,7 +135,7 @@ func parseNodestxt(file io.ReadCloser) []string {
 //
 // mapping page is expected to have the following format for each entry:
 // <key>,<cid>;
-func parseMappings(file io.ReadCloser) []mappingEntry {
+func parseMappings(file io.ReadCloser) ([]mappingEntry, error) {
 	// Ignore file closing error as we only read file content
 	defer file.Close()
 	fileReader := bufio.NewReader(file)
@@ -145,9 +152,9 @@ func parseMappings(file io.ReadCloser) []mappingEntry {
 		entry, err = fileReader.ReadSlice(';')
 	}
 	if err != nil && err != io.EOF {
-		return make([]mappingEntry, 0)
+		return make([]mappingEntry, 0), errParseMappings
 	}
-	return result
+	return result, nil
 }
 
 // parseMessage returns a pointer to message struct stored as an IPFS object, without validation.

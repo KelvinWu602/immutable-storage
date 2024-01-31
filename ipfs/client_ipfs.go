@@ -13,6 +13,11 @@ import (
 	shell "github.com/ipfs/go-ipfs-api"
 )
 
+var errRequestTimeout error = errors.New("req timeout exceeded")
+var errConnectionRefused error = errors.New("connection refused")
+var errInvalidCID error = errors.New("invalid cid")
+var errUnknownIPNS error = errors.New("unknown ipns")
+
 type ipfsClient struct {
 	sh      *shell.Shell
 	cli     *http.Client
@@ -130,12 +135,32 @@ func (req *ipfsClient) readFileWithPath(path string, offset uint64) (io.ReadClos
 }
 
 func (req *ipfsClient) readFileWithCID(cid string) (io.ReadCloser, error) {
-	content, err := req.sh.Cat(cid)
-	if err != nil {
-		log.Println(err)
-		return nil, err
+	// req.sh.Cat will return error immediately for malformed CID,
+	// however it does not have built-in timeout mechanism for a valid but non-exist CID.
+	// it will wait for the daemon to query all nodes in the world.
+
+	// implemented timeout function for readFileWithCID operation
+	doneSuccess := make(chan io.ReadCloser)
+	doneError := make(chan error)
+	go func() {
+		defer close(doneError)
+		defer close(doneSuccess)
+		content, err := req.sh.Cat(cid)
+		if err != nil {
+			doneError <- err
+		} else {
+			doneSuccess <- content
+		}
+	}()
+
+	select {
+	case content := <-doneSuccess:
+		return content, nil
+	case err := <-doneError:
+		return nil, ipfsErrorClassifier(err)
+	case <-time.After(req.timeout):
+		return nil, errRequestTimeout
 	}
-	return content, err
 }
 
 type SlashData struct {
@@ -161,21 +186,43 @@ type DagGetJson struct {
 	Links []Hash    `json:"Links"`
 }
 
+// TODO: defer close will lead to goroutine leak
+
 // getDAGLinks returns a map with file name or directory name as key, cid as values.
 func (req *ipfsClient) getDAGLinks(cid string) (map[string]string, error) {
-	var resJson DagGetJson
-	err := req.sh.DagGet(cid, &resJson)
-	if err != nil {
-		return nil, err
-	}
-	links := make(map[string]string)
-	for _, v := range resJson.Links {
-		if len(v.Name) > 0 {
-			// files also contains links, but those links are nameless
-			links[v.Name] = v.Hash.Slash
+	// req.sh.DagGet will return error immediately for malformed CID,
+	// however it does not have built-in timeout mechanism for a valid but non-exist CID.
+	// it will wait for the daemon to query all nodes in the world.
+
+	// implemented timeout function for getDAGLinks operation
+	doneSuccess := make(chan map[string]string)
+	doneError := make(chan error)
+	go func() {
+		defer close(doneError)
+		defer close(doneSuccess)
+		var resJson DagGetJson
+		err := req.sh.DagGet(cid, &resJson)
+		if err != nil {
+			doneError <- err
 		}
+		links := make(map[string]string)
+		for _, v := range resJson.Links {
+			if len(v.Name) > 0 {
+				// files also contains links, but those links are nameless
+				links[v.Name] = v.Hash.Slash
+			}
+		}
+		doneSuccess <- links
+	}()
+
+	select {
+	case links := <-doneSuccess:
+		return links, nil
+	case err := <-doneError:
+		return nil, ipfsErrorClassifier(err)
+	case <-time.After(req.timeout):
+		return nil, errRequestTimeout
 	}
-	return links, nil
 }
 
 func (req *ipfsClient) publishIPNSPointer(cid string, key string) (string, error) {
@@ -192,7 +239,7 @@ func (req *ipfsClient) resolveIPNSPointer(ipns string) (string, error) {
 	res, err := req.sh.Resolve(ipns)
 	if err != nil {
 		log.Println(err)
-		return "", err
+		return "", ipfsErrorClassifier(err)
 	}
 	return res, nil
 }
@@ -216,4 +263,18 @@ func (req *ipfsClient) listKeys() ([]string, error) {
 		keynames[i] = key.Name
 	}
 	return keynames, nil
+}
+
+func ipfsErrorClassifier(err error) error {
+	errStr := err.Error()
+	switch {
+	case strings.Contains(errStr, "connection refused"):
+		return errConnectionRefused
+	case strings.Contains(errStr, "could not resolve name"):
+		return errUnknownIPNS
+	case strings.Contains(errStr, "invalid cid"):
+		return errInvalidCID
+	default:
+		return err
+	}
 }

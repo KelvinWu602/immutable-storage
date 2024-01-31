@@ -19,3 +19,7 @@ type Key [KeySize]byte
 
 // KeySize defines the length of Key.
 const KeySize int = 48
+
+// MessageSize defines the maximum length of a message
+// TODO: confirm with forus-core see what size limit is required for successful encryption
+const MessageSize int = 2048

@@ -3,6 +3,7 @@ package ipfs
 import (
 	"context"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/KelvinWu602/node-discovery/protos"
@@ -42,4 +43,18 @@ func (nd *nodeDiscoveryClient) getMembers() ([]string, error) {
 		return nil, err
 	}
 	return res.Member, nil
+}
+
+func (nd *nodeDiscoveryClient) getNMembers(n int) ([]string, error) {
+	members, err := nd.getMembers()
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	subset := make([]string, n)
+	for i := 0; i < n; i++ {
+		choice := rand.Intn(n)
+		subset[i] = members[choice]
+	}
+	return subset, nil
 }
