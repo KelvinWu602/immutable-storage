@@ -51,10 +51,13 @@ func (nd *nodeDiscoveryClient) getNMembers(n int) ([]string, error) {
 		log.Println(err)
 		return nil, err
 	}
+	if len(members) <= n {
+		return members, nil
+	}
 	subset := make([]string, n)
+	choice := rand.Perm(len(members))[:n]
 	for i := 0; i < n; i++ {
-		choice := rand.Intn(n)
-		subset[i] = members[choice]
+		subset[i] = members[choice[i]]
 	}
 	return subset, nil
 }

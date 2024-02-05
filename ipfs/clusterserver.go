@@ -15,11 +15,11 @@ func NewClusterServer(ipfsimpl *IPFS) *ClusterServer {
 	return &ClusterServer{storage: ipfsimpl}
 }
 
-func (s ClusterServer) PropagateWrite(ctx context.Context, req *protos.PropagateWriteRequest) (*protos.PropagateWriteResponse, error) {
+func (s *ClusterServer) PropagateWrite(ctx context.Context, req *protos.PropagateWriteRequest) (*protos.PropagateWriteResponse, error) {
 	return &protos.PropagateWriteResponse{}, nil
 }
 
-func (s ClusterServer) Sync(ctx context.Context, req *protos.SyncRequest) (*protos.SyncResponse, error) {
+func (s *ClusterServer) Sync(ctx context.Context, req *protos.SyncRequest) (*protos.SyncResponse, error) {
 	return &protos.SyncResponse{
 		Found:        false,
 		CID:          "",
@@ -27,12 +27,12 @@ func (s ClusterServer) Sync(ctx context.Context, req *protos.SyncRequest) (*prot
 	}, nil
 }
 
-func (s ClusterServer) GetNodetxtIPNS(ctx context.Context, req *protos.GetNodetxtIPNSRequest) (*protos.GetNodetxtIPNSResponse, error) {
+func (s *ClusterServer) GetNodetxtIPNS(ctx context.Context, req *protos.GetNodetxtIPNSRequest) (*protos.GetNodetxtIPNSResponse, error) {
 	return &protos.GetNodetxtIPNSResponse{
 		NodetxtIPNS: "",
 	}, nil
 }
 
-func (s ClusterServer) mustEmbedUnimplementedImmutableStorageClusterServer() {
+func (s *ClusterServer) mustEmbedUnimplementedImmutableStorageClusterServer() {
 
 }
