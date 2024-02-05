@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"math/rand"
-	"sync"
 
 	"github.com/KelvinWu602/immutable-storage/blueprint"
 )
@@ -144,14 +143,36 @@ func (daemon *ipfsClient) validateMappingsIPNS(mappingsIPNS string, percentage i
 		}
 	}
 
-	// For each mappings page
-
-	var wg sync.WaitGroup
+	// For each mappings page, validate its correctness in parallel.
+	sampleSize := len(filesNameToCid)
+	doneSuccess := make(chan bool)
+	doneError := make(chan error)
+	defer close(doneSuccess)
+	defer close(doneError)
+	aggOk := true
 
 	for fileName, fileCID := range filesNameToCid {
-		wg.Add(1)
-		go daemon.validateMappingsPage(fileName, fileCID, percentage, &wg)
+		go func(filename string, filecid string) {
+			var ok bool
+			var err error
+			for retryCount, maxRetry := 0, 3; err != nil && retryCount < maxRetry; retryCount++ {
+				ok, err = daemon.validateMappingsPage(filename, filecid, percentage)
+			}
+			if err != nil {
+				doneError <- err
+			} else {
+				doneSuccess <- ok
+			}
+		}(fileName, fileCID)
 	}
 
-	return true, nil
+	for completedJob := 0; completedJob < sampleSize; completedJob++ {
+		select {
+		case err := <-doneError:
+			return false, err
+		case ok := <-doneSuccess:
+			aggOk = aggOk && ok
+		}
+	}
+	return aggOk, nil
 }
