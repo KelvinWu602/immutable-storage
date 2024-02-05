@@ -140,8 +140,8 @@ func (req *ipfsClient) readFileWithCID(cid string) (io.ReadCloser, error) {
 	// it will wait for the daemon to query all nodes in the world.
 
 	// implemented timeout function for readFileWithCID operation
-	doneSuccess := make(chan io.ReadCloser)
-	doneError := make(chan error)
+	doneSuccess := make(chan io.ReadCloser, 1)
+	doneError := make(chan error, 1)
 	go func() {
 		defer close(doneError)
 		defer close(doneSuccess)
@@ -186,8 +186,6 @@ type DagGetJson struct {
 	Links []Hash    `json:"Links"`
 }
 
-// TODO: defer close will lead to goroutine leak
-
 // getDAGLinks returns a map with file name or directory name as key, cid as values.
 func (req *ipfsClient) getDAGLinks(cid string) (map[string]string, error) {
 	// req.sh.DagGet will return error immediately for malformed CID,
@@ -195,8 +193,9 @@ func (req *ipfsClient) getDAGLinks(cid string) (map[string]string, error) {
 	// it will wait for the daemon to query all nodes in the world.
 
 	// implemented timeout function for getDAGLinks operation
-	doneSuccess := make(chan map[string]string)
-	doneError := make(chan error)
+	// use buffered channel to avoid blocking if the outer function returned first
+	doneSuccess := make(chan map[string]string, 1)
+	doneError := make(chan error, 1)
 	go func() {
 		defer close(doneError)
 		defer close(doneSuccess)
