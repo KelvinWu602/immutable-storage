@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"log"
+	"math/rand"
 	"sync"
 
 	"github.com/KelvinWu602/immutable-storage/blueprint"
@@ -73,21 +74,45 @@ func (daemon *ipfsClient) validateMappingsPage(fileName string, fileCID string, 
 		return false, nil
 	}
 	// random choose percentage mappings to validate
-	sampleSize := len(mappings) * percentage / 100
-	samples := make([]int, sampleSize)
+	populationSize := len(mappings)
+	sampleSize := populationSize * percentage / 100
+	samples := rand.Perm(populationSize)[:sampleSize]
+	doneSuccess := make(chan bool)
+	doneError := make(chan error)
+	defer close(doneSuccess)
+	defer close(doneError)
+	aggOk := true
+
+	// for each sample mapping, initiate a goroutine to validate it
 	for _, sampleId := range samples {
 		sample := mappings[sampleId]
-		var ok bool
-		for retryCount, maxRetry := 0, 3; err != nil && retryCount < maxRetry; retryCount++ {
-			ok, err = daemon.validateMapping(sample.key, sample.cid)
-		}
-		if err != nil {
+		// Avoid using closure which consumes heap and also the running time of the goroutine is undefined
+		go func(key blueprint.Key, cid string) {
+			var ok bool
+			var err error
+			for retryCount, maxRetry := 0, 3; err != nil && retryCount < maxRetry; retryCount++ {
+				ok, err = daemon.validateMapping(key, cid)
+			}
+			if err != nil {
+				doneError <- err
+			} else {
+				doneSuccess <- ok
+			}
+		}(sample.key, sample.cid)
+	}
+
+	for completedJob := 0; completedJob < sampleSize; completedJob++ {
+		select {
+		case err := <-doneError:
+			// return false, err if case of any error if encountered when checking, suggesting a retry on this function
 			return false, err
-		} else if !ok {
-			return false, nil
+		case ok := <-doneSuccess:
+			// aggregate the individual validation results
+			aggOk = aggOk && ok
 		}
 	}
-	return true, nil
+	// return the aggregated validation results
+	return aggOk, nil
 }
 
 func (daemon *ipfsClient) validateMappingsIPNS(mappingsIPNS string, percentage int) (bool, error) {
