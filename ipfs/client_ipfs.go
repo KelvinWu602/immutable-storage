@@ -24,8 +24,28 @@ type ipfsClient struct {
 	timeout time.Duration
 }
 
+// returns a pointer to the ipfsClient object, representing a connection with the IPFS daemon.
+// This is a blocking function and it returns only if the daemon is alive.
 func newIPFSClient(host string, timeout time.Duration) *ipfsClient {
+	// Ensure the daemon is alive
+	for isIPFSDaemonAlive(host) == false {
+		time.Sleep(time.Second)
+	}
 	return &ipfsClient{shell.NewShell(host), &http.Client{}, timeout}
+}
+
+func isIPFSDaemonAlive(host string) bool {
+	cli := &http.Client{}
+	res, err := cli.Head(host + "/api/v0/id")
+	if err != nil {
+		return false
+	}
+	switch res.StatusCode {
+	case 405:
+		return true
+	default:
+		return false
+	}
 }
 
 func (req *ipfsClient) createDirectory(path string) error {

@@ -17,7 +17,7 @@ type nodeDiscoveryClient struct {
 }
 
 func newNodeDiscoveryClient(addr string, timeout time.Duration) (*nodeDiscoveryClient, error) {
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Println(err)
 		return nil, err
