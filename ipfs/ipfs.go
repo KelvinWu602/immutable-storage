@@ -35,14 +35,13 @@ type cidProfile struct {
 // mappingEntry represents an entry in the mapping pages of a node, with the form of <key>,<cid>;
 type mappingEntry struct {
 	key blueprint.Key // key is the logical key associated with the stored message.
-	cid string        // cid is the IPFS CID of the stored message.
+	cid string        // cid is the IPFS CID of the stored mes sage.
 }
 
 // discoverProgressProfile represents the progress for this node to catch up existing records of a particular remote node.
 type discoverProgressProfile struct {
-	nextReadPage        uint   // nextReadPage stores the number of page this node has read.
-	nextReadEntryOffset uint   // nextReadEntryOffset stores the number of entries in the current page this node has read.
-	lastCommitCID       string // lastCommitCID stores the CID of the /mappings of the remote node, used to detect changes since previous read.
+	nextReadPage  uint   // nextReadPage stores the number of page this node has read.
+	lastCommitCID string // lastCommitCID stores the CID of the /mappings of the remote node, used to detect changes since previous read.
 }
 
 // IPFS implements blueprint.ImmutableStorage.
@@ -291,6 +290,7 @@ func (ipfs *IPFS) initClusterServer() {
 // 3) Store the Key-CID pair on the last mappings page under /mappings.
 // 4) Update the IPNS pointer to point at your latest /mappings/ CID.
 // 5) Call propagateWriteExternal to notify other nodes about this store event.
+// 6) Update local discoverProgressProfile
 //
 // Error semantics: on any failure will return error. Caller is suggested to retry the action.
 func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
@@ -303,7 +303,7 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 	if err != nil {
 		return err
 	}
-	// append the cid in the current mapping file
+	// Step 3
 	entry := fmt.Sprintf("%s,%s;", string(key[:]), cid)
 	mappingPagePath := fmt.Sprintf("/mappings/%s", mappingsPageNumberToName(ipfs.numOfFullyUsedPages))
 	// appendStringToFile will create the file when it does not exists
@@ -317,22 +317,29 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 	if err != nil {
 		return err
 	}
-
-	nodesCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	// Step 4
+	mappingsCID, err := ipfs.ipfsClient.getDirectoryCID("/mappings")
 	if err != nil {
 		return err
 	}
-
-	nodesIPNS, err := ipfs.ipfsClient.publishIPNSPointer(nodesCID, "nodes")
+	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "nodes")
 	if err != nil {
 		return err
 	}
-
+	// Step 5
 	membersIP, err := ipfs.nodeDiscoveryClient.getNMembers(3)
 	if err == nil {
 		// This step is optional.
-		propagateWriteExternal(nodesIPNS, membersIP)
+		propagateWriteExternal(mappingsIPNS, membersIP)
 	}
+	// Step 6
+	ipfs.keyToCid[key] = cidProfile{
+		cid:    cid,
+		source: mappingsIPNS,
+	}
+	trackingProgress := ipfs.discoverProgress[mappingsIPNS]
+	trackingProgress.lastCommitCID = mappingsCID
+	ipfs.discoverProgress[mappingsIPNS] = trackingProgress
 
 	return nil
 }
@@ -353,6 +360,64 @@ func (ipfs *IPFS) AvailableKeys() []blueprint.Key {
 func (ipfs *IPFS) IsDiscovered(key blueprint.Key) bool {
 	_, discovered := ipfs.keyToCid[key]
 	return discovered
+}
+
+func (ipfs *IPFS) checkPullIsRequired(mappingsIPNS string) (bool, error) {
+	trackingProgress, ok := ipfs.discoverProgress[mappingsIPNS]
+	if !ok {
+		return true, nil
+	}
+	remoteCID, err := ipfs.ipfsClient.resolveIPNSPointer(mappingsIPNS)
+	if err != nil {
+		return false, err
+	}
+	return remoteCID != trackingProgress.lastCommitCID, nil
+}
+
+// pullRemoteState pulls all new key-cid entries under updatedMappingsIPNS and store them in local cache.
+// Assumed this updatedMappingsIPNS is validated.
+func (ipfs *IPFS) pullRemoteState(updatedMappingsIPNS string) error {
+	// Return concrete or "zero" value trackingProgress
+	trackingProgress := ipfs.discoverProgress[updatedMappingsIPNS]
+	// Save the current progress
+	defer func() {
+		ipfs.discoverProgress[updatedMappingsIPNS] = trackingProgress
+	}()
+	remoteFolderCID, err := ipfs.ipfsClient.resolveIPNSPointer(updatedMappingsIPNS)
+	if err != nil {
+		return err
+	}
+	fileNameToCID, err := ipfs.ipfsClient.getDAGLinks(remoteFolderCID)
+	if err != nil {
+		return err
+	}
+
+	totalNumOfPages := uint(len(fileNameToCID))
+	for ; trackingProgress.nextReadPage < totalNumOfPages; trackingProgress.nextReadPage++ {
+		pageName := mappingsPageNumberToName(int(trackingProgress.nextReadPage))
+		pageCID := fileNameToCID[pageName]
+
+		file, err := openFileWithCID(ipfs.ipfsClient, pageCID)
+		if err != nil {
+			return err
+		}
+		mappings, err := parseMappings(file)
+		if err != nil {
+			return err
+		}
+		for _, entry := range mappings {
+			// Skip if this key has already discovered
+			if _, ok := ipfs.keyToCid[entry.key]; ok {
+				continue
+			}
+			ipfs.keyToCid[entry.key] = cidProfile{
+				cid:    entry.cid,
+				source: updatedMappingsIPNS,
+			}
+		}
+	}
+	trackingProgress.lastCommitCID = remoteFolderCID
+	return nil
 }
 
 // This function aims to speed up the latency for a remote node to discover a new local message stored on IPFS.
