@@ -17,6 +17,7 @@ var errRequestTimeout error = errors.New("req timeout exceeded")
 var errConnectionRefused error = errors.New("connection refused")
 var errInvalidCID error = errors.New("invalid cid")
 var errUnknownIPNS error = errors.New("unknown ipns")
+var errExceedFileSizeLimit error = errors.New("exceed file size limit")
 
 type ipfsClient struct {
 	sh      *shell.Shell
@@ -95,7 +96,7 @@ func (req *ipfsClient) appendStringToFile(
 	// obtain offset by getting the file size in byte
 	offset, _ := req.getDirectorySize(path)
 	if offset+uint64(len(content)) > fileSizeLimit {
-		return errors.New("exceed file size limit")
+		return errExceedFileSizeLimit
 	}
 	options := func(rb *shell.RequestBuilder) error {
 		rb.Option("create", true)   // create file if not exist

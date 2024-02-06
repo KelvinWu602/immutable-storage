@@ -3,6 +3,7 @@ package ipfs
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -50,8 +51,9 @@ type IPFS struct {
 	nodeDiscoveryClient *nodeDiscoveryClient         // used to talk to the localhost NodeDiscovery service
 	clusterServer       *grpc.Server                 // gRPC server serving other ImmutableStorage-IPFS nodes
 	keyToCid            map[blueprint.Key]cidProfile // keyToCid stores
-	nodesIPNS           string
-	mappingsIPNS        string
+	nodesIPNS           string                       // the IPNS name pointing to the /nodes.txt
+	mappingsIPNS        string                       // the IPNS name pointing to the /mappings/
+	numOfFullyUsedPages int                          // number of fully used files under /mappings/.
 	discoverProgress    map[string]discoverProgressProfile
 }
 
@@ -281,40 +283,57 @@ func (ipfs *IPFS) initClusterServer() {
 	log.Println("[initClusterServer]:Success call grpcServer.Serve")
 }
 
+// Store the given key and message to the IPFS. The key and value are considered immutable once this function has returned.
+//
+// This function will perform the following actions:
+// 1) Validate the input key and message.
+// 2) Store the message on IPFS, obtained a CID.
+// 3) Store the Key-CID pair on the last mappings page under /mappings.
+// 4) Update the IPNS pointer to point at your latest /mappings/ CID.
+// 5) Call propagateWriteExternal to notify other nodes about this store event.
+//
+// Error semantics: on any failure will return error. Caller is suggested to retry the action.
 func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
-	// TODO
+	// Step 1
 	if !blueprint.ValidateKey(key, message) {
 		return errors.New("invalid key")
 	}
-	// store the message on ipfs
+	// Step 2
 	cid, err := ipfs.ipfsClient.addFile(message)
 	if err != nil {
 		return err
 	}
 	// append the cid in the current mapping file
-	// TODO handle offset, next page logic
-	keyStr := string(key[:])
-	ipfs.ipfsClient.appendStringToFile("/mappings/???...", keyStr+","+cid+";", mappingPageMaxSize)
-
-	// TODO propagate write
-	// var peers []string = []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"}
-	// TODO: 3 should be configurable
-	for i := 0; i < 3; i++ {
-		// addr := peers[rand.Intn(len(peers))]
-		// grpcclient, ctx, cancel, err := createClusterClient(addr, ipfs.daemon.timeout) // TODO: daemon is not supposed to use in this way
-		// if err != nil {
-		// 	log.Println("error occured when Propagate Write.")
-		// 	log.Println(err)
-		// 	continue
-		// }
-		// _, err = grpcclient.PropagateWrite(*ctx, &protos.PropagateWriteRequest{})
-		// defer (*cancel)()
-		// if err != nil {
-		// 	log.Println("error occured when Propagate Write.")
-		// 	log.Println(err)
-		// 	continue
-		// }
+	entry := fmt.Sprintf("%s,%s;", string(key[:]), cid)
+	mappingPagePath := fmt.Sprintf("/mappings/%s", mappingsPageNumberToName(ipfs.numOfFullyUsedPages))
+	// appendStringToFile will create the file when it does not exists
+	err = ipfs.ipfsClient.appendStringToFile(mappingPagePath, entry, mappingPageMaxSize)
+	for errors.Is(err, errExceedFileSizeLimit) {
+		// If the current page is full, move on to next page
+		ipfs.numOfFullyUsedPages++
+		mappingPagePath = fmt.Sprintf("/mappings/%s", mappingsPageNumberToName(ipfs.numOfFullyUsedPages))
+		err = ipfs.ipfsClient.appendStringToFile(mappingPagePath, entry, mappingPageMaxSize)
 	}
+	if err != nil {
+		return err
+	}
+
+	nodesCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	if err != nil {
+		return err
+	}
+
+	nodesIPNS, err := ipfs.ipfsClient.publishIPNSPointer(nodesCID, "nodes")
+	if err != nil {
+		return err
+	}
+
+	membersIP, err := ipfs.nodeDiscoveryClient.getNMembers(3)
+	if err == nil {
+		// This step is optional.
+		propagateWriteExternal(nodesIPNS, membersIP)
+	}
+
 	return nil
 }
 

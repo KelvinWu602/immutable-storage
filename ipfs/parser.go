@@ -3,6 +3,7 @@ package ipfs
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -186,4 +187,10 @@ func parseMessage(file io.ReadCloser) (message, error) {
 	}
 
 	return msg, nil
+}
+
+// Takes the 0-indexed page number, convert it to the corresponding name of the file under /mappings/.
+// E.g. 1st file --> page number = 0 --> file name = 000000.txt.
+func mappingsPageNumberToName(pageNumber int) string {
+	return fmt.Sprintf("%.6v.txt", pageNumber)
 }
