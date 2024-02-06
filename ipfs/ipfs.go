@@ -432,8 +432,18 @@ func (ipfs *IPFS) pullRemoteState(updatedMappingsIPNS string) error {
 // Regarding step 4, non-blocking manner means that this function may return before it receives propagateWrite responses from the other members.
 // In other words, this function does not guarantee it will propagate the updatedMappingsIPNS to any node.
 func (ipfs *IPFS) propagateWriteInternal(updatedMappingsIPNS string) error {
-
-	// TODO: Step 1, 2
+	// Step 1, 2
+	requireUpdate, err := ipfs.checkPullIsRequired(updatedMappingsIPNS)
+	if err != nil {
+		return err
+	}
+	if !requireUpdate {
+		return nil
+	}
+	err = ipfs.pullRemoteState(updatedMappingsIPNS)
+	if err != nil {
+		return err
+	}
 
 	// Step 3
 	memberIPs, err := ipfs.nodeDiscoveryClient.getNMembers(3)
