@@ -363,7 +363,7 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		found, cid, mappingsIPNS := ipfs.requestSyncTimeoutJob(key, memberIPs, 3*time.Second)
+		found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 3*time.Second)
 		if found {
 			ipfs.keyToCid[key] = cidProfile{
 				cid:    cid,
@@ -386,7 +386,7 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 
 // requestSyncTimeoutJob will repeatedly call Sync on other ImmutableStorage-IPFS nodes for the CID corresponding to input key.
 // The calls are made in sequence, errors will be neglected.
-func (ipfs *IPFS) requestSyncTimeoutJob(key blueprint.Key, memberIPs []string, timeout time.Duration) (bool, string, string) {
+func requestSyncTimeoutJob(key blueprint.Key, memberIPs []string, timeout time.Duration) (bool, string, string) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
 	defer cancel()
 	for _, memberIP := range memberIPs {
