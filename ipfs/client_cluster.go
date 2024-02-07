@@ -56,6 +56,15 @@ func (cls *clusterClient) sync(key blueprint.Key) (found bool, cid string, mappi
 	return res.Found, res.CID, res.MappingsIPNS, nil
 }
 
+func (cls *clusterClient) syncDeadline(key blueprint.Key, deadlineContext context.Context) (found bool, cid string, mappingsIPNS string, err error) {
+	res, err := cls.client.Sync(deadlineContext, &protos.SyncRequest{Key: key[:]})
+	if err != nil {
+		log.Println(err)
+		return false, "", "", err
+	}
+	return res.Found, res.CID, res.MappingsIPNS, nil
+}
+
 func (cls *clusterClient) getNodetxtIPNS() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cls.timeout)
 	defer cancel()

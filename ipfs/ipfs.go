@@ -2,6 +2,7 @@
 package ipfs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -344,9 +345,73 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 	return nil
 }
 
+// Read returns the corresponding message payload with a given key.
+//
+// This function performs the following actions:
+// 1) check if the unknown key has been discovered, if yes, return message immediately.
+// 2) if the key is undiscovered, start a job with timeout, repeatedly call sync on other nodes.
+//
+// Error handling: for errors happened when request sync, ignore and proceed. For any other error, return it.
 func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
-	//TODO
-	return []byte{}, nil
+	var cid string
+	if ipfs.IsDiscovered(key) {
+		// retrieve CID from local cache
+		cid = ipfs.keyToCid[key].cid
+	} else {
+		// retrieve CID from peer nodes
+		memberIPs, err := ipfs.nodeDiscoveryClient.getMembers()
+		if err != nil {
+			return nil, err
+		}
+		found, cid, mappingsIPNS := ipfs.requestSyncTimeoutJob(key, memberIPs, 3*time.Second)
+		if found {
+			ipfs.keyToCid[key] = cidProfile{
+				cid:    cid,
+				source: mappingsIPNS,
+			}
+		}
+	}
+	// retrieve message with CID
+	file, err := openFileWithCID(ipfs.ipfsClient, cid)
+	defer file.Close()
+	if err != nil {
+		return nil, err
+	}
+	message, err := parseMessage(file)
+	if err != nil {
+		return nil, err
+	}
+	return message.payload, nil
+}
+
+// requestSyncTimeoutJob will repeatedly call Sync on other ImmutableStorage-IPFS nodes for the CID corresponding to input key.
+// The calls are made in sequence, errors will be neglected.
+func (ipfs *IPFS) requestSyncTimeoutJob(key blueprint.Key, memberIPs []string, timeout time.Duration) (bool, string, string) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	defer cancel()
+	for _, memberIP := range memberIPs {
+		addr := memberIP + ":3101"
+
+		clusterClient, err := newClusterClient(addr, timeout)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		found, cid, mappingsIPNS, err := clusterClient.syncDeadline(key, ctx)
+		if err != nil {
+			log.Println(err)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return false, "", ""
+			} else {
+				continue
+			}
+		}
+		if found {
+			return true, cid, mappingsIPNS
+		}
+		clusterClient.closeClusterClient()
+	}
+	return false, "", ""
 }
 
 func (ipfs *IPFS) AvailableKeys() []blueprint.Key {
