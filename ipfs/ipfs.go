@@ -57,7 +57,7 @@ type IPFS struct {
 	discoverProgress    map[string]discoverProgressProfile
 }
 
-func New(configFilePath string) (*IPFS, error) {
+func New(ctx context.Context, configFilePath string) (*IPFS, error) {
 	// Use default config on any error
 	// config := loadConfig(configFilePath)
 	// Create new IPFS struct
@@ -82,10 +82,12 @@ func New(configFilePath string) (*IPFS, error) {
 	}
 	ipfs.nodesIPNS = newNodesIPNS
 
-	// Create gRPC server serving other ImmutableStorage-IPFS nodes. Blocking.
-	ipfs.initClusterServer()
+	// Create gRPC server serving other ImmutableStorage-IPFS nodes. Running until Ctrl+C signal.
+	go ipfs.initClusterServer(ctx)
 
-	// TODO: create worker functions
+	// Start 2 worker goroutines. Running until Ctrl+C signal.
+	go worker(ctx, ipfs.updateIndexDirectoryIteration)
+	// go worker(ctx)
 
 	return &ipfs, nil
 }
@@ -256,8 +258,8 @@ func (ipfs *IPFS) groupInit(myNodesIPNS string, myMappingsIPNS string) (string, 
 }
 
 // Create a gRPC server to serve requests from other ImmutableStorage-IPFS nodes.
-// Blocking.
-func (ipfs *IPFS) initClusterServer() {
+// Blocking until ctx is cancelled.
+func (ipfs *IPFS) initClusterServer(ctx context.Context) {
 	ipfs.clusterServer = grpc.NewServer()
 	protos.RegisterImmutableStorageClusterServer(ipfs.clusterServer, NewClusterServer(ipfs))
 	reflection.Register(ipfs.clusterServer)
@@ -272,15 +274,13 @@ func (ipfs *IPFS) initClusterServer() {
 	}
 	log.Println("[initClusterServer]:Success call net.Listen")
 
-	// On error retry every 5s. Blocking.
-	err = ipfs.clusterServer.Serve(listener)
-	for err != nil {
-		log.Println("[initClusterServer]:Failed call grpcServer.Serve. Retry after 5s.")
-		log.Println(err)
-		time.Sleep(5 * time.Second)
-		err = ipfs.clusterServer.Serve(listener)
-	}
-	log.Println("[initClusterServer]:Success call grpcServer.Serve")
+	// Blocking until ctx is cancelled
+	go func() {
+		<-ctx.Done()
+		ipfs.clusterServer.GracefulStop()
+	}()
+	ipfs.clusterServer.Serve(listener)
+	log.Println("Gracefully stopped Cluster gRPC Server.")
 }
 
 // Store the given key and message to the IPFS. The key and value are considered immutable once this function has returned.
