@@ -130,84 +130,50 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	log.Println("[updateIndexDirectoryIteration]:Merged", externalNodeIPNS)
 }
 
-// func (ipfs *IPFS) updateMappingIteration(ctx context.Context) {
-// 	//TODO: allow termination of main goroutine to terminate the worker as well
-// 	//TODO: consider retrying mechanism when discover a page or record fails due to network errors (using a DLQ)
+// updateMappingIteration will get a copy of the local nodes.txt, and sync the state for this node with the latest remote state for each mappingsIPNS.
+// Error handling: on global error, log it and return. on record-level error, log it and continue
+//
+// It performs the following actions:
+// 1) Get local nodes.txt, on error log it and return.
+// 2) Parse nodes.txt, on error log it and return.
+// 3) checkPullIsRequired, on error log it and skip 4.
+// 4) pullRemoteState, on error log it and continue.
+//
+// TODO: consider validation, new records could be malicious.
+func (ipfs *IPFS) updateMappingIteration() {
+	// Step 1
+	nodestxt, err := openFileWithIPNS(ipfs.ipfsClient, ipfs.nodesIPNS)
+	if err != nil {
+		log.Println("[updateMappingIteration]:Failed to open", ipfs.nodesIPNS, "from localhost. error:", err)
+		return
+	}
+	defer nodestxt.Close()
 
-// 	// for each round
-// 	for {
-// 		// obtain the current list of ipns from local nodes.txt
-// 		ipnsRecords, err := parseNodesIPNS(ipfs.daemon, ipfs.nodesIPNS)
-// 		if err != nil {
-// 			// print the error, wait for 1s, continue
-// 			log.Println(err)
-// 			time.Sleep(1 * time.Second)
-// 			continue
-// 		}
-// 		for _, ipns := range ipnsRecords {
-// 			//check if we have created a profile for it
-// 			progress, ok := ipfs.discoverProgress[ipns]
-// 			if !ok {
-// 				//first time seeing the ipns, initialize discover progress profile
-// 				ipfs.discoverProgress[ipns] = discoverProgressProfile{
-// 					nextReadPage:        0,
-// 					nextReadEntryOffset: 0,
-// 					lastCommitCID:       "",
-// 				}
-// 			}
+	// Step 2
+	mappingsIPNSs, err := parseNodestxt(nodestxt)
+	if err != nil {
+		log.Println("[updateMappingIteration]:Failed to parse local nodes.txt from localhost. error:", err)
+		return
+	}
 
-// 			//check if the /mappings cid changed
-// 			cid, err := ipfs.daemon.resolveIPNSPointer(ipns)
-// 			if err != nil {
-// 				log.Println(err)
-// 				continue
-// 			}
-// 			if progress.lastCommitCID != cid {
-// 				// get all mapping pages filenames and cids
-// 				mappingPages, err := ipfs.daemon.getDAGLinks(cid)
-// 				if err != nil {
-// 					log.Println(err)
-// 					continue
-// 				}
+	for _, mappingsIPNS := range mappingsIPNSs {
+		// Step 3
+		pullRequired, err := ipfs.checkPullIsRequired(mappingsIPNS)
+		if err != nil {
+			log.Println("[updateMappingIteration]:Failed to resolve", mappingsIPNS, ". error:", err)
+			continue
+		}
 
-// 				// while there is page haven't been read
-// 				for progress.nextReadPage < uint(len(mappingPages)) {
-// 					nextReadFileName := pageNumberToFileName(progress.nextReadPage)
-// 					nextReadFileCid, ok := mappingPages[nextReadFileName]
-// 					if !ok {
-// 						// if a certain page is unfound, skip it
-// 						log.Printf("Cannot find %s in IPNS %s\n", nextReadFileName, ipns)
-// 						progress.nextReadPage++
-// 						continue
-// 					}
-// 					entries, err := parseMappingsCID(ipfs.daemon, nextReadFileCid)
-// 					if err != nil {
-// 						// if a certain page content is invalid, skip it
-// 						log.Println(err)
-// 						progress.nextReadPage++
-// 						continue
-// 					}
-// 					for row := progress.nextReadEntryOffset; row < uint(len(entries)); row++ {
-// 						entry := entries[row]
-// 						ok, err := validateMapping(ipfs.daemon, entry.key, entry.cid)
-// 						if err != nil || !ok {
-// 							log.Println("Found an invalid entry")
-// 							continue
-// 						}
-// 						// add the entry into keyToCid
-// 						ipfs.keyToCid[entry.key] = cidProfile{cid: entry.cid, source: ipns}
-// 					}
-// 					// update the nextReadEntryOffset
-// 					progress.nextReadEntryOffset = uint(len(entries))
-// 					if progress.nextReadEntryOffset >= 512 {
-// 						progress.nextReadEntryOffset = 0
-// 						progress.nextReadPage++
-// 					}
-// 				}
-// 				// update the last commit CID
-// 				progress.lastCommitCID = cid
-// 			}
-// 			ipfs.discoverProgress[ipns] = progress
-// 		}
-// 	}
-// }
+		if !pullRequired {
+			continue
+		}
+		// Step 4
+		err = ipfs.pullRemoteState(mappingsIPNS)
+		if err != nil {
+			// this marks the pull operation is partially completed in a valid state, can be rerunnable.
+			log.Println("[updateMappingIteration]:Failed to pull", mappingsIPNS, ". error:", err)
+			continue
+		}
+	}
+	log.Println("[updateMappingIteration]:Updated")
+}

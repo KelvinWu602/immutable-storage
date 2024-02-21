@@ -87,7 +87,7 @@ func New(ctx context.Context, configFilePath string) (*IPFS, error) {
 
 	// Start 2 worker goroutines. Running until Ctrl+C signal.
 	go worker(ctx, ipfs.updateIndexDirectoryIteration)
-	// go worker(ctx)
+	go worker(ctx, ipfs.updateMappingIteration)
 
 	return &ipfs, nil
 }
