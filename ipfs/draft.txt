@@ -1,0 +1,64 @@
+New():
+  load config file .yml
+    syntax of config file .yml
+    ===
+    host: <ipv4 address>
+    timeout: <int in ms>
+    ===
+  
+  test connection to the ipfs daemon
+    HTTP HEAD to <host>/api/v0/id
+    returned status code == 405
+
+  initialize node state:
+    1st stage: lonely initialization
+      0. create 2 public keys for each IPNS name if not yet existed
+        nodestxt ==> nodes.txt
+        mappings ==> mappings/
+      1. create empty directory mappings/ 
+        check if it already existed using createDirectory
+        =====
+        test error of 
+          createDirectory (if directory existed: err.Error() == "files/mkdir: file already exists") 
+          getDirectoryCID (if directory not existed: files/stat: file does not exist)
+        =====
+          if existed:
+            skip
+          if not existed:
+            createDirectory /mappings/
+            getDirectoryCID /mappings/
+      2. publish IPNS name for mappings/
+      3. create nodes.txt with IPNS of mappings/ written
+        check if it already existed using getDirectoryCID
+          if existed:
+            clear the content
+          add your mappingsIPNS to it as first record
+      4. create IPNS name for nodes.txt
+
+    2nd stage: group initialization
+      1. gossip broadcast your own IPNS of mappings/
+      2. query 3 other nodes for their nodes.txt's IPNS
+      3. for each unseen mappingIPNS, validate a random entry in it
+      4. create a union of 3 validated results, use it as your own nodes.txt
+      5. update your IPNS of nodes.txt
+      6. start the round-robin update worker goroutine
+
+specification of IPFS file structures:
+
+nodes.txt
+===
+<ipns>;
+===
+
+mappings/<page number>.txt
+===
+<key>,<cid>;
+===
+
+
+object relationship:
+
+ApplicationServer
+
+ImmutableStorage (interface)
+
