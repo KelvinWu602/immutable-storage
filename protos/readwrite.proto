@@ -1,0 +1,42 @@
+syntax = "proto3";
+package server;
+
+option go_package = "./protos";
+
+service ImmutableStorage {
+  rpc Store(StoreRequest) returns (StoreResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc AvailableKeys(AvailableKeysRequest) returns (AvailableKeysResponse);
+  rpc IsDiscovered(IsDiscoveredRequest) returns (IsDiscoveredResponse);
+}
+
+message StoreRequest {
+  bytes Key = 1;
+  bytes Content = 2;
+}
+
+message StoreResponse {
+  bool Success = 1;
+}
+
+message ReadRequest {
+  bytes Key = 1;
+}
+
+message ReadResponse {
+  bytes Content = 1;
+}
+
+message AvailableKeysRequest {}
+
+message AvailableKeysResponse {
+  repeated bytes Keys = 1;
+}
+
+message IsDiscoveredRequest {
+  bytes Key = 1;
+}
+
+message IsDiscoveredResponse {
+  bool IsDiscovered = 1;
+}
