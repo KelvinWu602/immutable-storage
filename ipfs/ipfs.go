@@ -64,6 +64,9 @@ func New(ctx context.Context, configFilePath string) (*IPFS, error) {
 	var ipfs IPFS
 	// Connect to all dependencies
 	ipfs.initDependencies()
+	// Populate important map data structures in heap
+	ipfs.keyToCid = make(map[blueprint.Key]cidProfile)
+	ipfs.discoverProgress = make(map[string]discoverProgressProfile)
 
 	// Lonely Initialization. On error retry every 10s.
 	mappingsIPNS, localNodesIPNS, err := ipfs.lonelyInit()
@@ -116,6 +119,7 @@ func (ipfs *IPFS) initDependencies() {
 	ipfs.nodeDiscoveryClient, err = newNodeDiscoveryClient("localhost:3200", 3*time.Second)
 	for err != nil {
 		// On error, retry every 1s
+		log.Println("Failed to connect to NodeDiscoveryClient, retry after 1s...")
 		time.Sleep(time.Second)
 		ipfs.nodeDiscoveryClient, err = newNodeDiscoveryClient("localhost:3200", 3*time.Second)
 	}
@@ -568,7 +572,11 @@ func (ipfs IPFS) initNodestxt() ([]string, error) {
 	for _, memberIP := range queryTargets {
 		wg.Add(1)
 		go func(memberIP string) {
+			// On error, still proceed.
+			defer wg.Done()
+
 			addr := memberIP + ":3101"
+			log.Println("Testing...", addr)
 
 			cli, err := newClusterClient(addr, 3*time.Second)
 			if err != nil {
@@ -600,7 +608,6 @@ func (ipfs IPFS) initNodestxt() ([]string, error) {
 			}
 
 			log.Println("[GetNodestxt]:Success on", addr)
-			wg.Done()
 		}(memberIP)
 	}
 	wg.Wait()
