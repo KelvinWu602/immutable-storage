@@ -69,12 +69,12 @@ func New(ctx context.Context, configFilePath string) (*IPFS, error) {
 	ipfs.discoverProgress = make(map[string]discoverProgressProfile)
 
 	// Lonely Initialization. On error retry every 10s.
-	mappingsIPNS, localNodesIPNS, err := ipfs.lonelyInit()
+	localNodesIPNS, mappingsIPNS, err := ipfs.lonelyInit()
 	for err != nil {
 		log.Println("Error during lonelyInit. Retry after 10s.")
 		log.Println(err)
 		time.Sleep(10 * time.Second)
-		mappingsIPNS, localNodesIPNS, err = ipfs.lonelyInit()
+		localNodesIPNS, mappingsIPNS, err = ipfs.lonelyInit()
 	}
 	ipfs.mappingsIPNS = mappingsIPNS
 
@@ -327,7 +327,7 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 	if err != nil {
 		return err
 	}
-	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "nodes")
+	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "mappings")
 	if err != nil {
 		return err
 	}
@@ -419,7 +419,7 @@ func requestSyncTimeoutJob(key blueprint.Key, memberIPs []string, timeout time.D
 }
 
 func (ipfs *IPFS) AvailableKeys() []blueprint.Key {
-	result := make([]blueprint.Key, len(ipfs.keyToCid))
+	result := make([]blueprint.Key, 0)
 	for key := range ipfs.keyToCid {
 		result = append(result, key)
 	}
