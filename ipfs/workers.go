@@ -74,12 +74,12 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	for _, mappingsIPNS := range mappingsIPNSs {
 		validationResults[mappingsIPNS] = true
 		waitValidation.Add(1)
-		go func() {
+		go func(mappingsIPNS string) {
 			// Ignore the mappingsIPNS which causes error during validation
 			ok, _ := ipfs.ipfsClient.validateMappingsIPNS(mappingsIPNS, 10)
 			validationResults[mappingsIPNS] = ok
 			waitValidation.Done()
-		}()
+		}(mappingsIPNS)
 	}
 	waitValidation.Wait()
 
