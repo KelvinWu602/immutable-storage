@@ -29,7 +29,8 @@ type ipfsClient struct {
 // This is a blocking function and it returns only if the daemon is alive.
 func newIPFSClient(host string, timeout time.Duration) *ipfsClient {
 	// Ensure the daemon is alive
-	for isIPFSDaemonAlive(host) == false {
+	for !isIPFSDaemonAlive(host) {
+		log.Println("Failed to connect to IPFS Daemon, retry after 1s...")
 		time.Sleep(time.Second)
 	}
 	return &ipfsClient{shell.NewShell(host), &http.Client{}, timeout}
@@ -37,8 +38,9 @@ func newIPFSClient(host string, timeout time.Duration) *ipfsClient {
 
 func isIPFSDaemonAlive(host string) bool {
 	cli := &http.Client{}
-	res, err := cli.Head(host + "/api/v0/id")
+	res, err := cli.Head("http://" + host + "/api/v0/id")
 	if err != nil {
+		log.Println("Exception when check daemon alive", err)
 		return false
 	}
 	switch res.StatusCode {
