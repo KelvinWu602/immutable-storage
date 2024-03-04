@@ -16,6 +16,7 @@ func worker(ctx context.Context, task func()) {
 			return
 		default:
 			// Perform task once
+			time.Sleep(10 * time.Second)
 			task()
 		}
 	}
