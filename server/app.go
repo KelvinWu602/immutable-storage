@@ -55,14 +55,18 @@ func (s ApplicationServer) AvailableKeys(
 	ctx context.Context,
 	req *protos.AvailableKeysRequest,
 ) (*protos.AvailableKeysResponse, error) {
-	return &protos.AvailableKeysResponse{Keys: nil}, nil
+	results := make([][]byte, 0)
+	for _, key := range s.storage.AvailableKeys() {
+		results = append(results, key[:])
+	}
+	return &protos.AvailableKeysResponse{Keys: results}, nil
 }
 
 func (s ApplicationServer) IsDiscovered(
 	ctx context.Context,
 	req *protos.IsDiscoveredRequest,
 ) (*protos.IsDiscoveredResponse, error) {
-	return &protos.IsDiscoveredResponse{IsDiscovered: false}, nil
+	return &protos.IsDiscoveredResponse{IsDiscovered: s.storage.IsDiscovered(blueprint.Key(req.Key))}, nil
 }
 
 func (s ApplicationServer) mustEmbedUnimplementedImmutableStorageServer() {
