@@ -576,7 +576,6 @@ func (ipfs IPFS) initNodestxt() ([]string, error) {
 			defer wg.Done()
 
 			addr := memberIP + ":3101"
-			log.Println("Testing...", addr)
 
 			cli, err := newClusterClient(addr, 3*time.Second)
 			if err != nil {
