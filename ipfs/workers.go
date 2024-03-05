@@ -57,7 +57,7 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	// Step 3
 	externalNodestxt, err := openFileWithIPNS(ipfs.ipfsClient, externalNodeIPNS)
 	if err != nil {
-		log.Println("[updateIndexDirectoryIteration]:Failed to open", externalNodestxt, "from", addr, ". error:", err)
+		log.Println("[updateIndexDirectoryIteration]:Failed to open", externalNodeIPNS, "from", addr, ". error:", err)
 		return
 	}
 	defer externalNodestxt.Close()
