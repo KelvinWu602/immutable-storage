@@ -25,7 +25,9 @@ func main() {
 	protos.RegisterImmutableStorageServer(gs, appServer)
 	reflection.Register(gs)
 
-	l, err := net.Listen("tcp", "127.0.0.1:3100")
+	// TODO: Should listen to loopback address only, this is for testing purpose
+	l, err := net.Listen("tcp", ":3100")
+	// l, err := net.Listen("tcp", "127.0.0.1:3100")
 	if err != nil {
 		log.Fatal("Failed to create gRPC server on port 3100", "error", err)
 	}
