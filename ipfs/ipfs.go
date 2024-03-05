@@ -269,12 +269,12 @@ func (ipfs *IPFS) initClusterServer(ctx context.Context) {
 	reflection.Register(ipfs.clusterServer)
 
 	// On error retry every 5s. Blocking.
-	listener, err := net.Listen("tcp", "127.0.0.1:3101")
+	listener, err := net.Listen("tcp", ":3101")
 	for err != nil {
 		log.Println("[initClusterServer]:Failed call net.Listen. Retry after 5s.")
 		log.Println(err)
 		time.Sleep(5 * time.Second)
-		listener, err = net.Listen("tcp", "127.0.0.1:3101")
+		listener, err = net.Listen("tcp", ":3101")
 	}
 	log.Println("[initClusterServer]:Success call net.Listen")
 
