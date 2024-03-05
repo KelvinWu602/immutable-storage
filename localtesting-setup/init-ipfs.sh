@@ -3,8 +3,8 @@
 # This shell script will start an IPFS daemon on localhost for testing
 # Run this script in WSL Ubuntu if you are on Windows
 
-MOUNT_DATA="~/immutable-storage-local-ipfs-mounts/data"
-MOUNT_STAGING="~/immutable-storage-local-ipfs-mounts/staging"
+MOUNT_DATA="$HOME/immutable-storage-local-ipfs-mounts/data"
+MOUNT_STAGING="$HOME/immutable-storage-local-ipfs-mounts/staging"
 
 # Create stateful folders if not exists
 mkdir -p $MOUNT_DATA
