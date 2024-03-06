@@ -24,6 +24,7 @@ func (daemon *ipfsClient) validateMapping(key blueprint.Key, cid string) (bool, 
 	// Multiple retry on error is recommended to ensure that this is not a network error.
 	file, err := daemon.readFileWithCID(cid)
 	if err != nil {
+		// log.Println("DEBUG: Unexpected err when read file,", err)
 		switch {
 		case errors.Is(err, errInvalidCID):
 			// if invalid format cid is found, must be an attack
@@ -44,9 +45,11 @@ func (daemon *ipfsClient) validateMapping(key blueprint.Key, cid string) (bool, 
 	}
 	// message must contains at least a key header
 	if n < blueprint.KeySize {
+		// log.Println("DEBUG: Unexpected err when msg < 48", err)
 		return false, nil
 	}
-	return blueprint.ValidateKey(key, message), nil
+
+	return blueprint.ValidateKey(key, message[:n]), nil
 }
 
 func (daemon *ipfsClient) validateMappingsPage(fileName string, fileCID string, percentage int) (bool, error) {
@@ -82,16 +85,31 @@ func (daemon *ipfsClient) validateMappingsPage(fileName string, fileCID string, 
 	defer close(doneError)
 	aggOk := true
 
+	debug := false
+	if debug {
+		log.Println("DEBUG: populationSize = ", populationSize)
+		log.Println("DEBUG: sampleSize     = ", sampleSize)
+		log.Println("DEBUG: samples        = ", samples)
+	}
+
 	// for each sample mapping, initiate a goroutine to validate it
 	for _, sampleId := range samples {
 		sample := mappings[sampleId]
+
+		// log.Println("DEBUG: found a mapping from page:", sample.key, sample.cid)
+
 		// Avoid using closure which consumes heap and also the running time of the goroutine is undefined
 		go func(key blueprint.Key, cid string) {
 			var ok bool
 			var err error
+			ok, err = daemon.validateMapping(key, cid)
 			for retryCount, maxRetry := 0, 3; err != nil && retryCount < maxRetry; retryCount++ {
+				// log.Println("DEBUG: call validateMapping", retryCount)
 				ok, err = daemon.validateMapping(key, cid)
 			}
+
+			// log.Println("DEBUG: validation result,", ok, err)
+
 			if err != nil {
 				doneError <- err
 			} else {
@@ -109,6 +127,7 @@ func (daemon *ipfsClient) validateMappingsPage(fileName string, fileCID string, 
 			// aggregate the individual validation results
 			aggOk = aggOk && ok
 		}
+		// log.Println("DEBUG: Job", completedJob, "completed.", aggOk)
 	}
 	// return the aggregated validation results
 	return aggOk, nil
@@ -124,6 +143,7 @@ func (daemon *ipfsClient) validateMappingsIPNS(mappingsIPNS string, percentage i
 	// Multiple retry on error is recommended to ensure this is not a network error.
 	mappingsCID, err := daemon.resolveIPNSPointer(mappingsIPNS)
 	if err != nil {
+		// log.Println("DEBUG: error when resolve mappings IPNS", mappingsIPNS)
 		switch {
 		case errors.Is(err, errUnknownIPNS):
 			// the IPNS pointer is not published or expired, no need to retry on this error
@@ -134,6 +154,7 @@ func (daemon *ipfsClient) validateMappingsIPNS(mappingsIPNS string, percentage i
 	}
 	filesNameToCid, err := daemon.getDAGLinks(mappingsCID)
 	if err != nil {
+		// log.Println("DEBUG: error when getting filesnames and cid", err)
 		switch {
 		case errors.Is(err, errInvalidCID):
 			// the IPNS pointer resolves to an invalid CID, no need to retry on this error
@@ -155,6 +176,7 @@ func (daemon *ipfsClient) validateMappingsIPNS(mappingsIPNS string, percentage i
 		go func(filename string, filecid string) {
 			var ok bool
 			var err error
+			ok, err = daemon.validateMappingsPage(filename, filecid, percentage)
 			for retryCount, maxRetry := 0, 3; err != nil && retryCount < maxRetry; retryCount++ {
 				ok, err = daemon.validateMappingsPage(filename, filecid, percentage)
 			}
