@@ -16,6 +16,7 @@ func worker(ctx context.Context, task func()) {
 			return
 		default:
 			// Perform task once
+			time.Sleep(10 * time.Second)
 			task()
 		}
 	}
@@ -31,6 +32,7 @@ func worker(ctx context.Context, task func()) {
 // 4) Parse the local nodes.txt.
 // 5) Merge the local and remote nodes.txt.
 // 6) Append the new found records in local nodes.txt.
+// 7) Update the local nodesIPNS to point to updated version of local nodes.txt.
 func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	// Step 1
 	memberIP, err := ipfs.nodeDiscoveryClient.getNMembers(1)
@@ -56,7 +58,7 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	// Step 3
 	externalNodestxt, err := openFileWithIPNS(ipfs.ipfsClient, externalNodeIPNS)
 	if err != nil {
-		log.Println("[updateIndexDirectoryIteration]:Failed to open", externalNodestxt, "from", addr, ". error:", err)
+		log.Println("[updateIndexDirectoryIteration]:Failed to open", externalNodeIPNS, "from", addr, ". error:", err)
 		return
 	}
 	defer externalNodestxt.Close()
@@ -67,18 +69,18 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 		return
 	}
 
-	var validationResults map[string]bool
+	var validationResults map[string]bool = map[string]bool{}
 
 	var waitValidation sync.WaitGroup
 	for _, mappingsIPNS := range mappingsIPNSs {
 		validationResults[mappingsIPNS] = true
 		waitValidation.Add(1)
-		go func() {
+		go func(mappingsIPNS string) {
 			// Ignore the mappingsIPNS which causes error during validation
 			ok, _ := ipfs.ipfsClient.validateMappingsIPNS(mappingsIPNS, 10)
 			validationResults[mappingsIPNS] = ok
 			waitValidation.Done()
-		}()
+		}(mappingsIPNS)
 	}
 	waitValidation.Wait()
 
@@ -97,12 +99,12 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	}
 
 	// Step 5
-	var existingRecords map[string]bool
+	var existingRecords map[string]bool = map[string]bool{}
 	for _, localMappingsIPNS := range localMappingsIPNSs {
 		existingRecords[localMappingsIPNS] = true
 	}
 
-	var newValidRecords []string
+	var newValidRecords []string = []string{}
 
 	for mappingsIPNS, valid := range validationResults {
 		// Skip invalid or existing records
@@ -127,6 +129,24 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 		log.Println(err)
 		return
 	}
+
+	// Step 7
+	// On error log it and proceed.
+	// if this part failed to execute successfully, may lead to duplicate records in nodes.txt.
+	nodesCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	if err != nil {
+		log.Println("[updateIndexDirectoryIteration]:Failed call ipfsClient.getDirectoryCID for path /nodes.txt. Duplicate records may exists in nodes.txt.")
+		log.Println(err)
+		return
+	}
+	nodesIPNS, err := ipfs.ipfsClient.publishIPNSPointer(nodesCID, "nodes")
+	if err != nil {
+		log.Println("[updateIndexDirectoryIteration]:Failed call ipfsClient.publishIPNSPointer for CID:", nodesCID, ". Duplicate records may exists in nodes.txt.")
+		log.Println(err)
+		return
+	}
+	log.Println("DEBUG: compare new old nodesIPNS", ipfs.nodesIPNS, nodesIPNS)
+
 	log.Println("[updateIndexDirectoryIteration]:Merged", externalNodeIPNS)
 }
 

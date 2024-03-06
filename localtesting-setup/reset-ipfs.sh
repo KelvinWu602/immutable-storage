@@ -1,7 +1,7 @@
 #!/bin/bash
 
-MOUNT_DATA="~/immutable-storage-local-ipfs-mounts/data"
-MOUNT_STAGING="~/immutable-storage-local-ipfs-mounts/staging"
+MOUNT_DATA="$HOME/immutable-storage-local-ipfs-mounts/data"
+MOUNT_STAGING="$HOME/immutable-storage-local-ipfs-mounts/staging"
 
 # remove stateful folders
 if [ -d "$MOUNT_DATA" ]; then

@@ -17,7 +17,7 @@ type clusterClient struct {
 }
 
 func newClusterClient(addr string, timeout time.Duration) (*clusterClient, error) {
-	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(10*time.Second))
 	if err != nil {
 		log.Println(err)
 		return nil, err

@@ -64,14 +64,17 @@ func New(ctx context.Context, configFilePath string) (*IPFS, error) {
 	var ipfs IPFS
 	// Connect to all dependencies
 	ipfs.initDependencies()
+	// Populate important map data structures in heap
+	ipfs.keyToCid = make(map[blueprint.Key]cidProfile)
+	ipfs.discoverProgress = make(map[string]discoverProgressProfile)
 
 	// Lonely Initialization. On error retry every 10s.
-	mappingsIPNS, localNodesIPNS, err := ipfs.lonelyInit()
+	localNodesIPNS, mappingsIPNS, err := ipfs.lonelyInit()
 	for err != nil {
 		log.Println("Error during lonelyInit. Retry after 10s.")
 		log.Println(err)
 		time.Sleep(10 * time.Second)
-		mappingsIPNS, localNodesIPNS, err = ipfs.lonelyInit()
+		localNodesIPNS, mappingsIPNS, err = ipfs.lonelyInit()
 	}
 	ipfs.mappingsIPNS = mappingsIPNS
 
@@ -116,6 +119,7 @@ func (ipfs *IPFS) initDependencies() {
 	ipfs.nodeDiscoveryClient, err = newNodeDiscoveryClient("localhost:3200", 3*time.Second)
 	for err != nil {
 		// On error, retry every 1s
+		log.Println("Failed to connect to NodeDiscoveryClient, retry after 1s...")
 		time.Sleep(time.Second)
 		ipfs.nodeDiscoveryClient, err = newNodeDiscoveryClient("localhost:3200", 3*time.Second)
 	}
@@ -265,12 +269,12 @@ func (ipfs *IPFS) initClusterServer(ctx context.Context) {
 	reflection.Register(ipfs.clusterServer)
 
 	// On error retry every 5s. Blocking.
-	listener, err := net.Listen("tcp", "127.0.0.1:3101")
+	listener, err := net.Listen("tcp", ":3101")
 	for err != nil {
 		log.Println("[initClusterServer]:Failed call net.Listen. Retry after 5s.")
 		log.Println(err)
 		time.Sleep(5 * time.Second)
-		listener, err = net.Listen("tcp", "127.0.0.1:3101")
+		listener, err = net.Listen("tcp", ":3101")
 	}
 	log.Println("[initClusterServer]:Success call net.Listen")
 
@@ -323,7 +327,7 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 	if err != nil {
 		return err
 	}
-	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "nodes")
+	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "mappings")
 	if err != nil {
 		return err
 	}
@@ -415,7 +419,7 @@ func requestSyncTimeoutJob(key blueprint.Key, memberIPs []string, timeout time.D
 }
 
 func (ipfs *IPFS) AvailableKeys() []blueprint.Key {
-	result := make([]blueprint.Key, len(ipfs.keyToCid))
+	result := make([]blueprint.Key, 0)
 	for key := range ipfs.keyToCid {
 		result = append(result, key)
 	}
@@ -568,6 +572,9 @@ func (ipfs IPFS) initNodestxt() ([]string, error) {
 	for _, memberIP := range queryTargets {
 		wg.Add(1)
 		go func(memberIP string) {
+			// On error, still proceed.
+			defer wg.Done()
+
 			addr := memberIP + ":3101"
 
 			cli, err := newClusterClient(addr, 3*time.Second)
@@ -600,7 +607,6 @@ func (ipfs IPFS) initNodestxt() ([]string, error) {
 			}
 
 			log.Println("[GetNodestxt]:Success on", addr)
-			wg.Done()
 		}(memberIP)
 	}
 	wg.Wait()
