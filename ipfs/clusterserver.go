@@ -21,15 +21,9 @@ func (s *ClusterServer) PropagateWrite(ctx context.Context, req *protos.Propagat
 }
 
 func (s *ClusterServer) Sync(ctx context.Context, req *protos.SyncRequest) (*protos.SyncResponse, error) {
-	var cid, source string
-	seen := s.storage.IsDiscovered(blueprint.Key(req.Key))
-	if seen {
-		cidProfile := s.storage.keyToCid[blueprint.Key(req.Key)]
-		cid = cidProfile.cid
-		source = cidProfile.source
-	}
+	cid, source := s.storage.sync(blueprint.Key(req.Key))
 	return &protos.SyncResponse{
-		Found:        seen,
+		Found:        (cid != "" && source != ""),
 		CID:          cid,
 		MappingsIPNS: source,
 	}, nil
