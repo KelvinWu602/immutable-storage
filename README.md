@@ -19,5 +19,5 @@ grpcurl --plaintext 127.0.0.1:3100 server.ImmutableStorage.AvailableKeys
 ### Store message
 
 ```
-grpcurl --plaintext -d '{"Key": "<Key>", "Content": "<Message>"}' <Source IP>:3100 server.ImmutableStorage.AvailableKeys
+grpcurl --plaintext -d '{"Key": "<Key>", "Content": "<Message>"}' <Source IP>:3100 server.ImmutableStorage.Store
 ```
