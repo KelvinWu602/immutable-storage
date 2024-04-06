@@ -41,6 +41,10 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 		log.Println(err)
 		return
 	}
+	if len(memberIP) == 0 {
+		log.Println("[updateIndexDirectoryIteration]: nodeDiscoveryClient.getNMembers return empty members array. Skip this iteration.")
+		return
+	}
 	addr := memberIP[0] + ":3101"
 	clusterClient, err := newClusterClient(addr, 3*time.Second)
 	if err != nil {
