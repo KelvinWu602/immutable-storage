@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/KelvinWu602/node-discovery v1.0.3 // indirect
+	github.com/KelvinWu602/node-discovery v1.0.6 // indirect
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
