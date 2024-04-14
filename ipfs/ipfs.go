@@ -376,6 +376,9 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 		}
 	}
 	// retrieve message with CID
+	if !ipfs.IsDiscovered(key) {
+		return nil, errors.New("key is not discovered")
+	}
 	file, err := openFileWithCID(ipfs.ipfsClient, cid)
 	defer func() {
 		if file != nil {
