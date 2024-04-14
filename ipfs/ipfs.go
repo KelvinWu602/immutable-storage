@@ -112,7 +112,7 @@ func loadConfig(configFilePath string) config {
 // TODO: add support for configurable ports
 func (ipfs *IPFS) initDependencies() {
 	// Establish connection with IPFS daemon
-	ipfs.ipfsClient = newIPFSClient("localhost:5001", 10*time.Second)
+	ipfs.ipfsClient = newIPFSClient("localhost:5001", 3*time.Minute)
 	log.Println("Connected to localhost:5001 -- IPFS daemon")
 	// Establish connection with NodeDiscovery grpc server
 	var err error
