@@ -377,7 +377,11 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 	}
 	// retrieve message with CID
 	file, err := openFileWithCID(ipfs.ipfsClient, cid)
-	defer file.Close()
+	defer func() {
+		if file != nil {
+			file.Close()
+		}
+	}()
 	if err != nil {
 		return nil, err
 	}
