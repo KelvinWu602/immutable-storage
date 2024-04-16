@@ -81,13 +81,13 @@ func TestParseMappings(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(3, len(mappings), "size of mappings should be 3.")
 
-	assert.Equal(blueprint.Key([]byte("012345678901234567890123456789012345678901234567")), mappings[0].key, "1st element key should starts with '0'")
+	assert.Equal(blueprint.Key([]byte{225, 83, 140, 12, 141, 73, 87, 141, 233, 244, 199, 5, 31, 98, 182, 66, 171, 13, 122, 204, 241, 157, 80, 30, 74, 251, 9, 147, 155, 21, 14, 235, 91, 130, 46, 231, 36, 222, 30, 215, 207, 205, 100, 100, 46, 170, 44, 202}), mappings[0].key, "1st element key should starts with '225'")
 	assert.Equal("cid01234", mappings[0].cid, "1st element cid should be 'cid01234'")
 
-	assert.Equal(blueprint.Key([]byte("112345678901234567890123456789012345678901234567")), mappings[1].key, "2nd element key should starts with '1'")
+	assert.Equal(blueprint.Key([]byte{153, 161, 209, 132, 114, 210, 73, 116, 114, 164, 95, 228, 11, 196, 90, 145, 195, 174, 221, 5, 140, 62, 32, 251, 31, 32, 81, 75, 111, 230, 113, 77, 22, 69, 112, 139, 12, 214, 70, 135, 103, 58, 240, 151, 193, 244, 109, 109}), mappings[1].key, "2nd element key should starts with '153'")
 	assert.Equal("cid012345678", mappings[1].cid, "2nd element cid should be 'cid012345678'")
 
-	assert.Equal(blueprint.Key([]byte("212345678901234567890123456789012345678901234567")), mappings[2].key, "3rd element key should starts with '2'")
+	assert.Equal(blueprint.Key([]byte{57, 170, 52, 13, 247, 210, 0, 18, 171, 165, 12, 69, 163, 131, 250, 89, 123, 145, 69, 181, 7, 97, 174, 175, 223, 27, 160, 40, 89, 233, 126, 180, 200, 133, 95, 78, 230, 182, 122, 186, 203, 249, 189, 13, 50, 252, 0, 209}), mappings[2].key, "3rd element key should starts with '57'")
 	assert.Equal("cid01234567890", mappings[2].cid, "3rd element cid should be 'cid01234567890'")
 }
 

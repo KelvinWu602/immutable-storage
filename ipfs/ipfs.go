@@ -3,6 +3,7 @@ package ipfs
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -309,7 +310,9 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 		return err
 	}
 	// Step 3
-	entry := fmt.Sprintf("%s,%s;", string(key[:]), cid)
+	// use BASE64_url encoding to avoid key containing delimiter ',' or ';'
+	keyBase64Url := base64.URLEncoding.EncodeToString(key[:])
+	entry := fmt.Sprintf("%s,%s;", keyBase64Url, cid)
 	mappingPagePath := fmt.Sprintf("/mappings/%s", mappingsPageNumberToName(ipfs.numOfFullyUsedPages))
 	// appendStringToFile will create the file when it does not exists
 	err = ipfs.ipfsClient.appendStringToFile(mappingPagePath, entry, mappingPageMaxSize)
