@@ -3,6 +3,7 @@ package ipfs
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -112,7 +113,7 @@ func loadConfig(configFilePath string) config {
 // TODO: add support for configurable ports
 func (ipfs *IPFS) initDependencies() {
 	// Establish connection with IPFS daemon
-	ipfs.ipfsClient = newIPFSClient("localhost:5001", 10*time.Second)
+	ipfs.ipfsClient = newIPFSClient("localhost:5001", 3*time.Minute)
 	log.Println("Connected to localhost:5001 -- IPFS daemon")
 	// Establish connection with NodeDiscovery grpc server
 	var err error
@@ -309,7 +310,9 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 		return err
 	}
 	// Step 3
-	entry := fmt.Sprintf("%s,%s;", string(key[:]), cid)
+	// use BASE64_url encoding to avoid key containing delimiter ',' or ';'
+	keyBase64Url := base64.URLEncoding.EncodeToString(key[:])
+	entry := fmt.Sprintf("%s,%s;", keyBase64Url, cid)
 	mappingPagePath := fmt.Sprintf("/mappings/%s", mappingsPageNumberToName(ipfs.numOfFullyUsedPages))
 	// appendStringToFile will create the file when it does not exists
 	err = ipfs.ipfsClient.appendStringToFile(mappingPagePath, entry, mappingPageMaxSize)
@@ -376,8 +379,15 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 		}
 	}
 	// retrieve message with CID
+	if !ipfs.IsDiscovered(key) {
+		return nil, errors.New("key is not discovered")
+	}
 	file, err := openFileWithCID(ipfs.ipfsClient, cid)
-	defer file.Close()
+	defer func() {
+		if file != nil {
+			file.Close()
+		}
+	}()
 	if err != nil {
 		return nil, err
 	}

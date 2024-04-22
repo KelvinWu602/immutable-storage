@@ -249,12 +249,25 @@ func (req *ipfsClient) getDAGLinks(cid string) (map[string]string, error) {
 
 func (req *ipfsClient) publishIPNSPointer(cid string, key string) (string, error) {
 	//TODO research on the effect of lifetime, see if any further actions are required to keep IPNS record alive
-	res, err := req.sh.PublishWithDetails(cid, key, 100*365*24*time.Hour, 5*time.Minute, true)
-	if err != nil {
-		log.Println(err)
+	respChan := make(chan string)
+	errorChan := make(chan error)
+	go func() {
+		res, err := req.sh.PublishWithDetails(cid, key, 100*365*24*time.Hour, 5*time.Minute, true)
+		if err != nil {
+			log.Println(err)
+			errorChan <- err
+		}
+		respChan <- res.Name
+	}()
+
+	select {
+	case resName := <-respChan:
+		return resName, nil
+	case err := <-errorChan:
 		return "", err
+	case <-time.After(req.timeout):
+		return "", errors.New("timeout error")
 	}
-	return res.Name, nil
 }
 
 func (req *ipfsClient) resolveIPNSPointer(ipns string) (string, error) {

@@ -56,7 +56,9 @@ func (s ApplicationServer) AvailableKeys(
 	req *protos.AvailableKeysRequest,
 ) (*protos.AvailableKeysResponse, error) {
 	results := make([][]byte, 0)
-	for _, key := range s.storage.AvailableKeys() {
+	keys := s.storage.AvailableKeys()
+	for _, key := range keys{
+		key := key
 		results = append(results, key[:])
 	}
 	return &protos.AvailableKeysResponse{Keys: results}, nil

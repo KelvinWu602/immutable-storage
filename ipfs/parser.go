@@ -2,11 +2,13 @@ package ipfs
 
 import (
 	"bufio"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/KelvinWu602/immutable-storage/blueprint"
 	"github.com/go-yaml/yaml"
@@ -140,20 +142,35 @@ func parseMappings(file io.ReadCloser) ([]mappingEntry, error) {
 	// Ignore file closing error as we only read file content
 	defer file.Close()
 	fileReader := bufio.NewReader(file)
-	// Read until the delimiter ';'
-	entry, err := fileReader.ReadSlice(';')
 	result := make([]mappingEntry, 0)
-	for err == nil {
-		// Read first blueprint.KeySize bytes as key
-		key := blueprint.Key(entry[:blueprint.KeySize])
-		// Read remaining bytes as cid (except last byte which is delimiter ';')
-		cid := string(entry[blueprint.KeySize+1 : len(entry)-1])
-
-		result = append(result, mappingEntry{key: key, cid: cid})
-		entry, err = fileReader.ReadSlice(';')
-	}
-	if err != nil && err != io.EOF {
-		return make([]mappingEntry, 0), errParseMappings
+	for {
+		// Read until the delimiter ';'
+		entry, err := fileReader.ReadSlice(';')
+		if err != nil && err != io.EOF {
+			return make([]mappingEntry, 0), errParseMappings
+		} else if err == io.EOF {
+			break
+		}
+		// Can read back something
+		if len(entry) <= 1 {
+			// Skip if entry contains only delimiter ';'
+			continue
+		}
+		// Convert to string type first, and remove the last byte which is the delimiter ';'
+		entryStr := strings.Split(string(entry[:len(entry)-1]), ",")
+		if len(entryStr) != 2 {
+			// Skip if entry does not have both the key and cid
+			continue
+		}
+		keyBase64Url := entryStr[0]
+		cid := entryStr[1]
+		// Convert the key from base64 url to bytes
+		key, err := base64.URLEncoding.DecodeString(keyBase64Url)
+		if err != nil || len(key) != 48 || len(cid) == 0 {
+			// Skip if the entry data is invalid
+			continue
+		}
+		result = append(result, mappingEntry{key: blueprint.Key(key), cid: cid})
 	}
 	return result, nil
 }
