@@ -265,7 +265,7 @@ func (req *ipfsClient) publishIPNSPointer(cid string, key string) (string, error
 		return resName, nil
 	case err := <-errorChan:
 		return "", err
-	case <-time.After(10 * time.Second):
+	case <-time.After(req.timeout):
 		return "", errors.New("timeout error")
 	}
 }
