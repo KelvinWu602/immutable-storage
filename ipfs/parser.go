@@ -78,7 +78,7 @@ func openFileWithIPNS(daemon *ipfsClient, ipns string) (io.ReadCloser, error) {
 // returns a nil pointer if any error occured
 func openFileWithCID(daemon *ipfsClient, cid string) (io.ReadCloser, error) {
 	file, err := daemon.readFileWithCID(cid)
-	if err != err {
+	if err != nil {
 		log.Println(err)
 		return nil, errOpenFile
 	}

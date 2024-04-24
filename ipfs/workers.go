@@ -35,17 +35,24 @@ func worker(ctx context.Context, task func()) {
 // 7) Update the local nodesIPNS to point to updated version of local nodes.txt.
 func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	// Step 1
-	memberIP, err := ipfs.nodeDiscoveryClient.getNMembers(1)
+	memberIPs, err := ipfs.nodeDiscoveryClient.getMembers()
 	if err != nil {
 		log.Println("[updateIndexDirectoryIteration]:Failed call nodeDiscoveryClient.getNMembers. Skip this iteration.")
 		log.Println(err)
 		return
 	}
-	if len(memberIP) == 0 {
+	if len(memberIPs) == 0 {
 		log.Println("[updateIndexDirectoryIteration]: nodeDiscoveryClient.getNMembers return empty members array. Skip this iteration.")
 		return
 	}
-	addr := memberIP[0] + ":3101"
+
+	for _, memberIP := range memberIPs {
+		ipfs.updateIndexDirectoryHelper(memberIP)
+	}
+}
+
+func (ipfs *IPFS) updateIndexDirectoryHelper(memberIP string) {
+	addr := memberIP + ":3101"
 	clusterClient, err := newClusterClient(addr, 3*time.Second)
 	if err != nil {
 		log.Println("[updateIndexDirectoryIteration]:Failed create new clusterClient. Skip this iteration.")
@@ -77,19 +84,28 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 
 	var waitValidation sync.WaitGroup
 	for _, mappingsIPNS := range mappingsIPNSs {
+		// log.Println("[updateIndexDirectoryIteration]:Validating mappingIPNS", mappingsIPNS, "from", addr)
 		validationResults[mappingsIPNS] = true
 		waitValidation.Add(1)
 		go func(mappingsIPNS string) {
 			// Ignore the mappingsIPNS which causes error during validation
 			ok, _ := ipfs.ipfsClient.validateMappingsIPNS(mappingsIPNS, 10)
 			validationResults[mappingsIPNS] = ok
+			// log.Println("[updateIndexDirectoryIteration]:Validated mappingIPNS", mappingsIPNS, "Result is", ok)
 			waitValidation.Done()
 		}(mappingsIPNS)
 	}
 	waitValidation.Wait()
 
 	// Step 4
-	localNodestxt, err := openFileWithIPNS(ipfs.ipfsClient, ipfs.nodesIPNS)
+	localNodestxtCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	// log.Println("[updateIndexDirectoryIteration]: CID of the nodes.txt before append", localNodestxtCID)
+	if err != nil {
+		log.Println("[updateIndexDirectoryIteration]:Failed call ipfsClient.getDirectoryCID for path /nodes.txt. Duplicate records may exists in nodes.txt.")
+		log.Println(err)
+		return
+	}
+	localNodestxt, err := openFileWithCID(ipfs.ipfsClient, localNodestxtCID)
 	if err != nil {
 		log.Println("[updateIndexDirectoryIteration]:Failed to open", ipfs.nodesIPNS, "from localhost", ". error:", err)
 		return
@@ -107,6 +123,7 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	for _, localMappingsIPNS := range localMappingsIPNSs {
 		existingRecords[localMappingsIPNS] = true
 	}
+	// log.Println("[updateIndexDirectoryIteration]:Existing records:", existingRecords)
 
 	var newValidRecords []string = []string{}
 
@@ -117,6 +134,7 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 			newValidRecords = append(newValidRecords, mappingsIPNS)
 		}
 	}
+	log.Println("[updateIndexDirectoryIteration]:New Valid records:", newValidRecords)
 
 	formattedContent := strings.Join(append(newValidRecords, ""), ";")
 
@@ -138,6 +156,7 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 	// On error log it and proceed.
 	// if this part failed to execute successfully, may lead to duplicate records in nodes.txt.
 	nodesCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	// log.Println("[updateIndexDirectoryIteration]: CID of the nodes.txt", nodesCID)
 	if err != nil {
 		log.Println("[updateIndexDirectoryIteration]:Failed call ipfsClient.getDirectoryCID for path /nodes.txt. Duplicate records may exists in nodes.txt.")
 		log.Println(err)
@@ -166,9 +185,16 @@ func (ipfs *IPFS) updateIndexDirectoryIteration() {
 // TODO: consider validation, new records could be malicious.
 func (ipfs *IPFS) updateMappingIteration() {
 	// Step 1
-	nodestxt, err := openFileWithIPNS(ipfs.ipfsClient, ipfs.nodesIPNS)
+	nodesCID, err := ipfs.ipfsClient.getDirectoryCID("/nodes.txt")
+	// log.Println("[updateMappingIteration]: CID of the nodes.txt", nodesCID)
 	if err != nil {
-		log.Println("[updateMappingIteration]:Failed to open", ipfs.nodesIPNS, "from localhost. error:", err)
+		log.Println("[updateMappingIteration]:Failed call ipfsClient.getDirectoryCID for path /nodes.txt. Duplicate records may exists in nodes.txt.")
+		log.Println(err)
+		return
+	}
+	nodestxt, err := openFileWithCID(ipfs.ipfsClient, nodesCID)
+	if err != nil {
+		log.Println("[updateMappingIteration]:Failed to open /nodes.txt with CID", nodesCID, "from localhost. error:", err)
 		return
 	}
 	defer nodestxt.Close()

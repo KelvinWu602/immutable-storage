@@ -370,7 +370,7 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 3*time.Second)
+		found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 10*time.Second)
 		if found {
 			ipfs.keyToCid[key] = cidProfile{
 				cid:    cid,
@@ -438,6 +438,22 @@ func (ipfs *IPFS) AvailableKeys() []blueprint.Key {
 
 func (ipfs *IPFS) IsDiscovered(key blueprint.Key) bool {
 	_, discovered := ipfs.keyToCid[key]
+	if !discovered {
+		// retrieve CID from peer nodes
+		memberIPs, err := ipfs.nodeDiscoveryClient.getMembers()
+		if err != nil {
+			return false
+		}
+		found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 10*time.Second)
+		if found {
+			log.Println("[sync]:New key discovered:", key)
+			ipfs.keyToCid[key] = cidProfile{
+				cid:    cid,
+				source: mappingsIPNS,
+			}
+			return true
+		}
+	}
 	return discovered
 }
 
@@ -493,6 +509,7 @@ func (ipfs *IPFS) pullRemoteState(updatedMappingsIPNS string) error {
 				cid:    entry.cid,
 				source: updatedMappingsIPNS,
 			}
+			log.Println("[pullRemoteState]:New key discovered:", entry.key)
 		}
 	}
 	trackingProgress.lastCommitCID = remoteFolderCID
