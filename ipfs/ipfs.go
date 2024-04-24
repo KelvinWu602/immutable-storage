@@ -300,6 +300,9 @@ func (ipfs *IPFS) initClusterServer(ctx context.Context) {
 //
 // Error semantics: on any failure will return error. Caller is suggested to retry the action.
 func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
+	// Debug step
+	mappingsCID, _ := ipfs.ipfsClient.getDirectoryCID("/mappings")
+	log.Println("[Store]:Before store, mappingsCID == ", mappingsCID)
 	// Step 1
 	if !blueprint.ValidateKey(key, message) {
 		return errors.New("invalid key")
@@ -326,20 +329,24 @@ func (ipfs *IPFS) Store(key blueprint.Key, message []byte) error {
 		return err
 	}
 	// Step 4
-	mappingsCID, err := ipfs.ipfsClient.getDirectoryCID("/mappings")
+	mappingsCID, err = ipfs.ipfsClient.getDirectoryCID("/mappings")
+	// mappingsCID, err := ipfs.ipfsClient.getDirectoryCID("/mappings")
 	if err != nil {
 		return err
 	}
+	// DEBUG
+	log.Println("[Store]:After store, mappingsCID == ", mappingsCID)
+
 	mappingsIPNS, err := ipfs.ipfsClient.publishIPNSPointer(mappingsCID, "mappings")
 	if err != nil {
 		return err
 	}
 	// Step 5
-	membersIP, err := ipfs.nodeDiscoveryClient.getNMembers(3)
-	if err == nil {
-		// This step is optional.
-		propagateWriteExternal(mappingsIPNS, membersIP)
-	}
+	// membersIP, err := ipfs.nodeDiscoveryClient.getNMembers(3)
+	// if err == nil {
+	// 	// This step is optional.
+	// 	propagateWriteExternal(mappingsIPNS, membersIP)
+	// }
 	// Step 6
 	ipfs.keyToCid[key] = cidProfile{
 		cid:    cid,
@@ -364,33 +371,30 @@ func (ipfs *IPFS) Read(key blueprint.Key) ([]byte, error) {
 	if ipfs.IsDiscovered(key) {
 		// retrieve CID from local cache
 		cid = ipfs.keyToCid[key].cid
-	} else {
-		// retrieve CID from peer nodes
-		memberIPs, err := ipfs.nodeDiscoveryClient.getMembers()
-		if err != nil {
-			return nil, err
-		}
-		found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 10*time.Second)
-		if found {
-			ipfs.keyToCid[key] = cidProfile{
-				cid:    cid,
-				source: mappingsIPNS,
-			}
-		}
 	}
+	// } else {
+	// 	// retrieve CID from peer nodes
+	// 	memberIPs, err := ipfs.nodeDiscoveryClient.getMembers()
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	found, cid, mappingsIPNS := requestSyncTimeoutJob(key, memberIPs, 10*time.Second)
+	// 	if found {
+	// 		ipfs.keyToCid[key] = cidProfile{
+	// 			cid:    cid,
+	// 			source: mappingsIPNS,
+	// 		}
+	// 	}
+	// }
 	// retrieve message with CID
 	if !ipfs.IsDiscovered(key) {
 		return nil, errors.New("key is not discovered")
 	}
 	file, err := openFileWithCID(ipfs.ipfsClient, cid)
-	defer func() {
-		if file != nil {
-			file.Close()
-		}
-	}()
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 	message, err := parseMessage(file)
 	if err != nil {
 		return nil, err
@@ -474,8 +478,10 @@ func (ipfs *IPFS) checkPullIsRequired(mappingsIPNS string) (bool, error) {
 func (ipfs *IPFS) pullRemoteState(updatedMappingsIPNS string) error {
 	// Return concrete or "zero" value trackingProgress
 	trackingProgress := ipfs.discoverProgress[updatedMappingsIPNS]
+	log.Println("[pullRemoteState]:before pull trackingProgress == ", trackingProgress)
 	// Save the current progress
 	defer func() {
+		log.Println("[pullRemoteState]:after pull trackingProgress == ", trackingProgress)
 		ipfs.discoverProgress[updatedMappingsIPNS] = trackingProgress
 	}()
 	remoteFolderCID, err := ipfs.ipfsClient.resolveIPNSPointer(updatedMappingsIPNS)
@@ -489,6 +495,7 @@ func (ipfs *IPFS) pullRemoteState(updatedMappingsIPNS string) error {
 
 	totalNumOfPages := uint(len(fileNameToCID))
 	for ; trackingProgress.nextReadPage < totalNumOfPages; trackingProgress.nextReadPage++ {
+		log.Println("[pullRemoteState]:Pulling page ", trackingProgress.nextReadPage, "/", totalNumOfPages)
 		pageName := mappingsPageNumberToName(int(trackingProgress.nextReadPage))
 		pageCID := fileNameToCID[pageName]
 

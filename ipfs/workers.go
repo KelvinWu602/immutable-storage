@@ -119,25 +119,29 @@ func (ipfs *IPFS) updateIndexDirectoryHelper(memberIP string) {
 	}
 
 	// Step 5
-	var existingRecords map[string]bool = map[string]bool{}
+	newRecords := []string{}
 	for _, localMappingsIPNS := range localMappingsIPNSs {
-		existingRecords[localMappingsIPNS] = true
+		newRecords = append(newRecords, localMappingsIPNS)
 	}
 	// log.Println("[updateIndexDirectoryIteration]:Existing records:", existingRecords)
 
-	var newValidRecords []string = []string{}
+	// var newValidRecords []string = []string{}
 
 	for mappingsIPNS, valid := range validationResults {
 		// Skip invalid or existing records
-		if _, alreadyExists := existingRecords[mappingsIPNS]; valid && !alreadyExists {
-			// Append the record into the array
-			newValidRecords = append(newValidRecords, mappingsIPNS)
+		// if _, alreadyExists := existingRecords[mappingsIPNS]; valid && !alreadyExists {
+		// 	// Append the record into the array
+		// 	newValidRecords = append(newValidRecords, mappingsIPNS)
+		// }
+		if valid {
+			newRecords = append(newRecords, mappingsIPNS)
 		}
 	}
-	log.Println("[updateIndexDirectoryIteration]:New Valid records:", newValidRecords)
+	// log.Println("[updateIndexDirectoryIteration]:New Valid records:", newValidRecords)
 
-	formattedContent := strings.Join(append(newValidRecords, ""), ";")
+	formattedContent := strings.Join(append(newRecords, ""), ";")
 
+	ipfs.ipfsClient.removeFile("/nodes.txt", true)
 	// Step 6
 	// On error retry 3 times, blocking
 	err = ipfs.ipfsClient.appendStringToFile("/nodes.txt", formattedContent, nodestxtMaxSize)
@@ -218,6 +222,7 @@ func (ipfs *IPFS) updateMappingIteration() {
 			continue
 		}
 		// Step 4
+		log.Println("[updateMappingIteration]:Pull remote state of mappingsIPNS ==", mappingsIPNS)
 		err = ipfs.pullRemoteState(mappingsIPNS)
 		if err != nil {
 			// this marks the pull operation is partially completed in a valid state, can be rerunnable.
